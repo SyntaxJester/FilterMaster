@@ -166,6 +166,21 @@
                 android:textSize="13sp" />
 
             <TextView
+                android:id="@+id/btnCatalog"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="@drawable/bg_rounded_8"
+                android:backgroundTint="#FFFFFF"
+                android:elevation="2dp"
+                android:paddingLeft="13dp"
+                android:paddingRight="13dp"
+                android:paddingTop="7dp"
+                android:paddingBottom="7dp"
+                android:text="📚 车型库"
+                android:textColor="#55627A"
+                android:textSize="12.5sp" />
+
+            <TextView
                 android:id="@+id/btnImport"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
