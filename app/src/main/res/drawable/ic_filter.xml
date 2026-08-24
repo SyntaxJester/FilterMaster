@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- 滤芯图标：圆筒+滤网 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M7,2h10c0.55,0 1,0.45 1,1v3H6V3C6,2.45 6.45,2 7,2zM6,8h12v9c0,0.55 -0.45,1 -1,1h-2v3l-3,-2l-3,2v-3H7c-0.55,0 -1,-0.45 -1,-1V8zM9,10.5v5h6v-5H9z" />
+</vector>

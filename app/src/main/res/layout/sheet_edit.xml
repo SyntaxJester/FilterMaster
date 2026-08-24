@@ -1,0 +1,252 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <View
+        android:layout_width="40dp"
+        android:layout_height="4dp"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginTop="10dp"
+        android:background="@drawable/bg_rounded_8" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingLeft="18dp"
+        android:paddingRight="12dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="12dp">
+
+        <TextView
+            android:id="@+id/sheetTitle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="新增滤芯"
+            android:textColor="@color/text_main"
+            android:textSize="17sp"
+            android:textStyle="bold" />
+
+        <ImageButton
+            android:id="@+id/btnSheetClose"
+            android:layout_width="30dp"
+            android:layout_height="30dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="关闭"
+            android:src="@android:drawable/ic_menu_close_clear_cancel"
+            android:tint="#8590A5" />
+    </LinearLayout>
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:scrollbars="none">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingLeft="18dp"
+            android:paddingRight="18dp"
+            android:paddingBottom="10dp">
+
+            <!-- 类型 -->
+            <TextView
+                style="@style/FormLabel"
+                android:text="滤芯类型" />
+
+            <com.google.android.material.chip.ChipGroup
+                android:id="@+id/chipGroupType"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:chipSpacingHorizontal="8dp"
+                app:selectionRequired="false"
+                app:singleSelection="true"
+                 />
+
+            <!-- 货品编码 -->
+            <TextView style="@style/FormLabel" android:text="货品编码 *" />
+            <EditText
+                android:id="@+id/etGoodsCode"
+                style="@style/FormInput"
+                android:hint="请输入货品编码"
+                android:inputType="text" />
+
+            <!-- OE码 -->
+            <TextView style="@style/FormLabel" android:text="OE码" />
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+
+                <EditText
+                    android:id="@+id/etOeCode"
+                    style="@style/FormInput"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:hint="扫码或手动输入"
+                    android:inputType="text" />
+
+                <Button
+                    android:id="@+id/btnScanOe"
+                    android:layout_width="wrap_content"
+                    android:layout_height="46dp"
+                    android:layout_marginStart="8dp"
+                    android:backgroundTint="#22C55E"
+                    android:paddingLeft="16dp"
+                    android:paddingRight="16dp"
+                    android:stateListAnimator="@null"
+                    android:text="扫码"
+                    android:textColor="#FFFFFF"
+                    android:textSize="14sp"
+                    app:cornerRadius="12dp"
+                     />
+            </LinearLayout>
+
+            <!-- 车型 -->
+            <TextView style="@style/FormLabel" android:text="车型" />
+            <EditText
+                android:id="@+id/etCarModel"
+                style="@style/FormInput"
+                android:hint="如：大众 迈腾 330TSI"
+                android:inputType="text" />
+
+            <!-- 规格 -->
+            <TextView style="@style/FormLabel" android:text="规格" />
+            <EditText
+                android:id="@+id/etSpec"
+                style="@style/FormInput"
+                android:hint="如：φ68×142"
+                android:inputType="text" />
+
+            <!-- 胶圈 -->
+            <TextView style="@style/FormLabel" android:text="胶圈" />
+            <EditText
+                android:id="@+id/etRing"
+                style="@style/FormInput"
+                android:hint="请输入胶圈信息"
+                android:inputType="text" />
+
+            <!-- 盒子 -->
+            <TextView style="@style/FormLabel" android:text="盒子" />
+            <EditText
+                android:id="@+id/etBox"
+                style="@style/FormInput"
+                android:hint="请输入盒子信息"
+                android:inputType="text" />
+
+            <!-- 备注 -->
+            <TextView style="@style/FormLabel" android:text="备注" />
+            <EditText
+                android:id="@+id/etNotes"
+                style="@style/FormInput"
+                android:layout_height="wrap_content"
+                android:minHeight="84dp"
+                android:gravity="top"
+                android:hint="请输入备注"
+                android:inputType="textMultiLine"
+                android:minLines="3" />
+
+            <!-- 照片 -->
+            <TextView style="@style/FormLabel" android:text="滤芯照片" />
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/btnTakePhoto"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_field"
+                    android:gravity="center"
+                    android:padding="13dp"
+                    android:text="📷 拍照"
+                    android:textColor="#55627A"
+                    android:textSize="13.5sp" />
+
+                <TextView
+                    android:id="@+id/btnPickPhoto"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="10dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_field"
+                    android:gravity="center"
+                    android:padding="13dp"
+                    android:text="🖼️ 相册"
+                    android:textColor="#55627A"
+                    android:textSize="13.5sp" />
+            </LinearLayout>
+
+            <FrameLayout
+                android:id="@+id/imgPreviewWrap"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:visibility="gone">
+
+                <ImageView
+                    android:id="@+id/ivPreview"
+                    android:layout_width="match_parent"
+                    android:layout_height="200dp"
+                    android:scaleType="centerCrop"
+                    android:contentDescription="预览" />
+
+                <ImageButton
+                    android:id="@+id/btnRemoveImage"
+                    android:layout_width="28dp"
+                    android:layout_height="28dp"
+                    android:layout_gravity="top|end"
+                    android:layout_margin="8dp"
+                    android:background="#8C000000"
+                    android:contentDescription="移除图片"
+                    android:src="@android:drawable/ic_menu_close_clear_cancel"
+                    android:tint="#FFFFFF" />
+            </FrameLayout>
+        </LinearLayout>
+    </ScrollView>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingLeft="18dp"
+        android:paddingRight="18dp"
+        android:paddingTop="12dp"
+        android:paddingBottom="18dp">
+
+        <Button
+            android:id="@+id/btnCancel"
+            android:layout_width="0dp"
+            android:layout_height="46dp"
+            android:layout_weight="1"
+            android:backgroundTint="@color/field_bg"
+            android:stateListAnimator="@null"
+            android:text="取消"
+            android:textColor="#55627A"
+            android:textSize="15sp"
+            app:cornerRadius="14dp"
+             />
+
+        <Button
+            android:id="@+id/btnSave"
+            android:layout_width="0dp"
+            android:layout_height="46dp"
+            android:layout_marginStart="10dp"
+            android:layout_weight="1"
+            android:backgroundTint="#2F6BFF"
+            android:stateListAnimator="@null"
+            android:text="保存"
+            android:textColor="#FFFFFF"
+            android:textSize="15sp"
+            android:textStyle="bold"
+            app:cornerRadius="14dp" />
+    </LinearLayout>
+</LinearLayout>

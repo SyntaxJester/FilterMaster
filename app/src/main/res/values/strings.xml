@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">汽车滤芯管理</string>
+    <string name="brand_sub">Filter Master · 离线存储</string>
+    <string name="stats_fmt">共 %1$s 条记录</string>
+    <string name="count_pill_fmt">%1$s 条</string>
+</resources>

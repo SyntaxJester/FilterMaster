@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="primary">#2F6BFF</color>
+    <color name="primary_deep">#1E4FD6</color>
+    <color name="bg">#F2F5FA</color>
+    <color name="card">#FFFFFF</color>
+    <color name="text_main">#1B2436</color>
+    <color name="text_sub">#8590A5</color>
+    <color name="line">#EEF1F6</color>
+    <color name="field_bg">#F4F6FB</color>
+
+    <color name="oil_bg">#FFF4E0</color><color name="oil_fg">#C47B00</color>
+    <color name="air_bg">#E2F8EC</color><color name="air_fg">#0D9457</color>
+    <color name="ac_bg">#E1F2FF</color><color name="ac_fg">#0B78C9</color>
+    <color name="fuel_bg">#FFE7E5</color><color name="fuel_fg">#D63B2F</color>
+    <color name="none_bg">#EFF2F7</color><color name="none_fg">#8590A5</color>
+
+    <color name="danger">#D63B2F</color>
+    <color name="green">#15803D</color>
+    <color name="meta_text">#5B6779</color>
+</resources>
