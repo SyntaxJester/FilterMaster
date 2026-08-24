@@ -84,6 +84,15 @@ class MainActivity : AppCompatActivity() {
     private var detailDialog: BottomSheetDialog? = null
     private var currentDetailId: Long? = null
 
+    // 车型参考库弹层
+    private var catalogDialog: BottomSheetDialog? = null
+    private lateinit var etCatalogSearch: EditText
+    private lateinit var catalogBrandBar: LinearLayout
+    private lateinit var catalogRecycler: RecyclerView
+    private lateinit var catalogAdapter: CatalogAdapter
+    private var catalogBrand: String? = null
+    private val catalogTagViews = mutableMapOf<String, TextView>()
+
     private var scanMode = "edit"   // edit: 填OE码 | search: 填搜索框
     private var pendingCameraFile: File? = null
     private var pendingExportText: String? = null
@@ -225,8 +234,9 @@ class MainActivity : AppCompatActivity() {
         currentType = type
         tagViews.forEach { (t, v) ->
             if (t == type) {
-                v.background?.mutate()?.setTint(Color.WHITE)
-                v.setTextColor(ContextCompat.getColor(this, R.color.primary))
+                // 实心深蓝底 + 白字，高对比
+                v.background?.mutate()?.setTint(ContextCompat.getColor(this, R.color.primary_deep))
+                v.setTextColor(Color.WHITE)
                 v.setTypeface(v.typeface, android.graphics.Typeface.BOLD)
             } else {
                 v.background?.mutate()?.setTint(Color.parseColor("#29FFFFFF"))
@@ -256,8 +266,97 @@ class MainActivity : AppCompatActivity() {
         findViewById<ImageButton>(R.id.btnScanSearch).setOnClickListener { startScan("search") }
         findViewById<View>(R.id.fabScan).setOnClickListener { startScan("search") }
         findViewById<View>(R.id.fabAdd).setOnClickListener { openEditor(null) }
+        findViewById<View>(R.id.btnCatalog).setOnClickListener { showCatalog() }
         findViewById<TextView>(R.id.btnImport).setOnClickListener { startImport() }
         findViewById<TextView>(R.id.btnExport).setOnClickListener { startExport() }
+    }
+
+    // ---------- 车型参考库 ----------
+    private fun showCatalog() {
+        if (catalogDialog == null) {
+            val dialog = BottomSheetDialog(this)
+            val view = layoutInflater.inflate(R.layout.sheet_catalog, null)
+            dialog.setContentView(view)
+            etCatalogSearch = view.findViewById(R.id.etCatalogSearch)
+            catalogBrandBar = view.findViewById(R.id.catalogBrandBar)
+            catalogRecycler = view.findViewById(R.id.catalogRecycler)
+            catalogAdapter = CatalogAdapter(emptyList()) { entry ->
+                dialog.dismiss()
+                prefillFromCatalog(entry)
+            }
+            catalogRecycler.layoutManager = LinearLayoutManager(this)
+            catalogRecycler.adapter = catalogAdapter
+
+            view.findViewById<ImageButton>(R.id.btnCatalogClose).setOnClickListener { dialog.dismiss() }
+
+            etCatalogSearch.addTextChangedListener(object : TextWatcher {
+                override fun afterTextChanged(s: Editable?) { renderCatalog() }
+                override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            })
+
+            buildCatalogBrandBar()
+            catalogDialog = dialog
+        }
+        renderCatalog()
+        catalogDialog!!.show()
+    }
+
+    private fun buildCatalogBrandBar() {
+        catalogBrandBar.removeAllViews()
+        catalogTagViews.clear()
+        val params = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply { marginEnd = dp(8) }
+
+        val brands = listOf("all" to "全部") + FilterCatalog.BRANDS.map { it to it }
+        brands.forEach { (key, label) ->
+            val tv = TextView(this)
+            tv.text = label
+            tv.textSize = 12.5f
+            tv.setPadding(dp(13), dp(6), dp(13), dp(6))
+            tv.layoutParams = params
+            tv.setBackgroundResource(R.drawable.bg_rounded_8)
+            tv.setOnClickListener {
+                catalogBrand = if (key == "all") null else key
+                styleCatalogBrandBar()
+                renderCatalog()
+            }
+            catalogBrandBar.addView(tv)
+            catalogTagViews[key] = tv
+        }
+        styleCatalogBrandBar()
+    }
+
+    private fun styleCatalogBrandBar() {
+        catalogTagViews.forEach { (key, v) ->
+            if (key == (catalogBrand ?: "all")) {
+                v.background?.mutate()?.setTint(ContextCompat.getColor(this, R.color.primary))
+                v.setTextColor(Color.WHITE)
+                v.setTypeface(v.typeface, android.graphics.Typeface.BOLD)
+            } else {
+                v.background?.mutate()?.setTint(ContextCompat.getColor(this, R.color.field_bg))
+                v.setTextColor(Color.parseColor("#55627A"))
+                v.setTypeface(v.typeface, android.graphics.Typeface.NORMAL)
+            }
+        }
+    }
+
+    private fun renderCatalog() {
+        val kw = if (::etCatalogSearch.isInitialized) etCatalogSearch.text.toString() else ""
+        catalogAdapter.submit(FilterCatalog.search(kw, catalogBrand))
+    }
+
+    private fun prefillFromCatalog(entry: FilterCatalog.Entry) {
+        val item = FilterItem(
+            type = entry.type,
+            oeCode = entry.oe,
+            carModel = "${entry.brand} ${entry.model}",
+            notes = if (entry.note.isBlank()) "" else "参考库备注：${entry.note}"
+        )
+        openEditor(item)
+        editTitle.text = "从车型库添加"
+        toast("已填入，请补充编码后保存")
     }
 
     // ---------- 列表渲染 ----------
@@ -377,7 +476,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun openEditor(item: FilterItem?) {
         val dialog = ensureEditDialog()
-        editingId = item?.id
+        // id==0 表示来自车型库的预填模板，仍按新增处理
+        editingId = item?.id?.takeIf { it != 0L }
         editTitle.text = if (item == null) "新增滤芯" else "编辑滤芯"
         etGoodsCode.setText(item?.goodsCode.orEmpty())
         etOeCode.setText(item?.oeCode.orEmpty())
