@@ -1,8 +1,11 @@
 package com.filtermaster.app
 
+import android.Manifest
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.ActivityNotFoundException
+import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -143,6 +146,19 @@ class MainActivity : AppCompatActivity() {
     private val importLauncher =
         registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             uri?.let { importCsvFromUri(it) }
+        }
+
+    // 相机运行时权限：声明了 CAMERA 权限后，未授权直接调起系统相机会闪退
+    private var pendingCameraAction: (() -> Unit)? = null
+    private val cameraPermLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            val action = pendingCameraAction
+            pendingCameraAction = null
+            if (granted) {
+                action?.invoke()
+            } else {
+                toast("需要相机权限才能使用该功能")
+            }
         }
 
     // ---------- 生命周期 ----------
@@ -325,12 +341,14 @@ class MainActivity : AppCompatActivity() {
             chip.isCheckable = true
             chip.tag = type
             chip.chipStrokeWidth = 0f
+            chip.isCheckedIconVisible = false
+            // 选中：实心蓝底白字，未选中：灰底深字（高对比度）
             chip.chipBackgroundColor = ColorStateList(
                 arrayOf(
                     intArrayOf(android.R.attr.state_checked),
                     intArrayOf()
                 ),
-                intArrayOf(Color.parseColor("#EAF0FF"), Color.parseColor("#F4F6FB"))
+                intArrayOf(Color.parseColor("#2F6BFF"), Color.parseColor("#F4F6FB"))
             )
             chip.setTextColor(
                 ColorStateList(
@@ -338,10 +356,10 @@ class MainActivity : AppCompatActivity() {
                         intArrayOf(android.R.attr.state_checked),
                         intArrayOf()
                     ),
-                    intArrayOf(ContextCompat.getColor(this, R.color.primary),
-                        Color.parseColor("#55627A"))
+                    intArrayOf(Color.WHITE, Color.parseColor("#55627A"))
                 )
             )
+            chip.textSize = 14f
             chip.setOnCheckedChangeListener { _, isChecked ->
                 if (isChecked) pickedType = chip.tag as String
             }
@@ -564,25 +582,54 @@ class MainActivity : AppCompatActivity() {
         toast("已复制 OE码 ✓")
     }
 
+    // ---------- 相机权限 ----------
+    private fun ensureCameraPerm(action: () -> Unit) {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
+            == PackageManager.PERMISSION_GRANTED) {
+            action()
+        } else {
+            pendingCameraAction = action
+            cameraPermLauncher.launch(Manifest.permission.CAMERA)
+        }
+    }
+
     // ---------- 扫码 ----------
     private fun startScan(mode: String) {
         scanMode = mode
-        scanLauncher.launch(ScanOptions().apply {
-            setDesiredBarcodeFormats(ScanOptions.ALL_CODE_TYPES)
-            setPrompt("对准条码自动识别")
-            setBeepEnabled(true)
-            setOrientationLocked(false)
-        })
+        ensureCameraPerm {
+            try {
+                scanLauncher.launch(ScanOptions().apply {
+                    setDesiredBarcodeFormats(ScanOptions.ALL_CODE_TYPES)
+                    setPrompt("对准条码自动识别")
+                    setBeepEnabled(true)
+                    setOrientationLocked(false)
+                })
+            } catch (e: ActivityNotFoundException) {
+                toast("未找到可用的相机应用")
+            } catch (e: Exception) {
+                toast("无法启动相机：${e.message}")
+            }
+        }
     }
 
     // ---------- 图片处理 ----------
     private fun takePhoto() {
-        val dir = File(cacheDir, "photos")
-        if (!dir.exists()) dir.mkdirs()
-        val f = File(dir, "capture_${System.currentTimeMillis()}.jpg")
-        pendingCameraFile = f
-        val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", f)
-        cameraLauncher.launch(uri)
+        ensureCameraPerm { doTakePhoto() }
+    }
+
+    private fun doTakePhoto() {
+        try {
+            val dir = File(cacheDir, "photos")
+            if (!dir.exists()) dir.mkdirs()
+            val f = File(dir, "capture_${System.currentTimeMillis()}.jpg")
+            pendingCameraFile = f
+            val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", f)
+            cameraLauncher.launch(uri)
+        } catch (e: ActivityNotFoundException) {
+            toast("未找到可用的相机应用")
+        } catch (e: Exception) {
+            toast("无法启动相机：${e.message}")
+        }
     }
 
     private fun processCapturedImage(temp: File) {
