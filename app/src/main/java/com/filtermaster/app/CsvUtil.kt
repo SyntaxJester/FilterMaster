@@ -6,13 +6,12 @@ import java.util.Locale
 
 /**
  * CSV 导入导出。
- * 列结构与网页版完全一致：
- * 类型,货品编码,OE码,车型,规格,胶圈,盒子,备注,图片,创建时间
+ * 列结构：品牌,货品编码,OE码,车型,规格,胶圈,盒子,备注,图片,创建时间
  */
 object CsvUtil {
 
     val HEADERS = listOf(
-        "类型", "货品编码", "OE码", "车型", "规格", "胶圈", "盒子", "备注", "图片", "创建时间"
+        "品牌", "货品编码", "OE码", "车型", "规格", "胶圈", "盒子", "备注", "图片", "创建时间"
     )
 
     fun exportRows(items: List<FilterItem>): String {
@@ -21,9 +20,9 @@ object CsvUtil {
         val fmt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US)
         items.forEach { f ->
             val cells = listOf(
-                f.type, f.goodsCode, f.oeCode, f.carModel,
+                f.brand, f.goodsCode, f.oeCode, f.carModel,
                 f.specification, f.rubberRing, f.boxInfo, f.notes,
-                "", // 图片不写入 CSV（体积太大），仅保留列以兼容网页版
+                "", // 图片不写入 CSV（体积太大），仅保留列位
                 f.createdAt.ifBlank { fmt.format(Date()) }
             )
             sb.appendLine(cells.joinToString(",") { quote(it) })
@@ -71,20 +70,29 @@ object CsvUtil {
     fun toItems(rows: List<List<String>>): List<FilterItem> {
         val out = mutableListOf<FilterItem>()
         // 第 0 行是表头则跳过
-        val start = if (rows.isNotEmpty() && rows[0].firstOrNull()?.contains("货品编码") == true) 1 else 0
+        val start = if (rows.isNotEmpty() &&
+            rows[0].any { it.contains("货品编码") || it.contains("品牌") }) 1 else 0
         for (i in start until rows.size) {
             val c = rows[i]
             fun g(idx: Int) = c.getOrNull(idx)?.trim().orEmpty()
+            val rawBrand = g(0)
             val item = FilterItem(
                 id = System.currentTimeMillis() + i,
-                type = g(0),
+                // 只接受已知品牌，未知值写入备注避免污染筛选
+                brand = if (Brands.ALL.contains(rawBrand)) rawBrand else "",
                 goodsCode = g(1),
                 oeCode = g(2),
                 carModel = g(3),
                 specification = g(4),
                 rubberRing = g(5),
                 boxInfo = g(6),
-                notes = g(7),
+                notes = buildString {
+                    append(g(7))
+                    if (rawBrand.isNotBlank() && !Brands.ALL.contains(rawBrand)) {
+                        if (isNotEmpty()) append(" / ")
+                        append("原品牌：$rawBrand")
+                    }
+                },
                 createdAt = g(9).ifBlank {
                     SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).format(Date())
                 }

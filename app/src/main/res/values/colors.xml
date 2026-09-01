@@ -9,10 +9,17 @@
     <color name="line">#EEF1F6</color>
     <color name="field_bg">#F4F6FB</color>
 
-    <color name="oil_bg">#FFF4E0</color><color name="oil_fg">#C47B00</color>
-    <color name="air_bg">#E2F8EC</color><color name="air_fg">#0D9457</color>
-    <color name="ac_bg">#E1F2FF</color><color name="ac_fg">#0B78C9</color>
-    <color name="fuel_bg">#FFE7E5</color><color name="fuel_fg">#D63B2F</color>
+    <!-- 品牌徽章色板（按品牌顺序取用，可继续扩充） -->
+    <color name="b1_bg">#E1F0FF</color><color name="b1_fg">#0B6FC9</color>
+    <color name="b2_bg">#FFF1E0</color><color name="b2_fg">#C06A00</color>
+    <color name="b3_bg">#E2F8EC</color><color name="b3_fg">#0D9457</color>
+    <color name="b4_bg">#FFF6D6</color><color name="b4_fg">#9A7400</color>
+    <color name="b5_bg">#F0E9FF</color><color name="b5_fg">#6B3FD4</color>
+    <color name="b6_bg">#E0F7F5</color><color name="b6_fg">#0A857C</color>
+    <color name="b7_bg">#E5F4FF</color><color name="b7_fg">#1173B8</color>
+    <color name="b8_bg">#FFE9EF</color><color name="b8_fg">#C42A56</color>
+    <color name="b9_bg">#EFF7DC</color><color name="b9_fg">#5F8A00</color>
+    <color name="b10_bg">#FFE7E5</color><color name="b10_fg">#D63B2F</color>
     <color name="none_bg">#EFF2F7</color><color name="none_fg">#8590A5</color>
 
     <color name="danger">#D63B2F</color>

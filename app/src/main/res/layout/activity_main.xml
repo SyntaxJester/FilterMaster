@@ -100,7 +100,7 @@
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:background="@null"
-                    android:hint="搜索编码 / OE码 / 车型 / 规格…"
+                    android:hint="搜索编码 / OE码 / 车型 / 品牌…"
                     android:imeOptions="actionSearch"
                     android:importantForAutofill="no"
                     android:inputType="text"

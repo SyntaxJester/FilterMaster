@@ -40,15 +40,15 @@ class FilterAdapter(
 
         h.tvCode.text = item.goodsCode.ifBlank { "未编码" }
 
-        // 类型徽章
-        if (item.type.isBlank()) {
-            h.tvTypeBadge.visibility = View.GONE
+        // 品牌徽章
+        if (item.brand.isBlank()) {
+            h.tvBrandBadge.visibility = View.GONE
         } else {
-            h.tvTypeBadge.visibility = View.VISIBLE
-            val (bg, fg) = badgeColors(item.type)
-            h.tvTypeBadge.text = typeIcon(item.type) + " " + item.type.replace("滤芯", "")
-            h.tvTypeBadge.background?.mutate()?.setTint(ContextCompat.getColor(ctx, bg))
-            h.tvTypeBadge.setTextColor(ContextCompat.getColor(ctx, fg))
+            h.tvBrandBadge.visibility = View.VISIBLE
+            val (bg, fg) = Brands.colorsOf(item.brand)
+            h.tvBrandBadge.text = item.brand
+            h.tvBrandBadge.background?.mutate()?.setTint(ContextCompat.getColor(ctx, bg))
+            h.tvBrandBadge.setTextColor(ContextCompat.getColor(ctx, fg))
         }
 
         // OE 码芯片
@@ -76,20 +76,19 @@ class FilterAdapter(
             val d9 = dp(ctx, 9)
             val d4 = dp(ctx, 4)
             tv.setPadding(d9, d4, d9, d4)
-            h.metaRow.addView(
-                tv,
-                FlexboxLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT
-                )
+            val lp = FlexboxLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
             )
+            lp.setMargins(0, 0, dp(ctx, 6), dp(ctx, 6))
+            h.metaRow.addView(tv, lp)
         }
 
         // 缩略图
         val imgPath = item.imagePath
         if (!imgPath.isNullOrBlank() && File(imgPath).exists()) {
             h.ivThumb.visibility = View.VISIBLE
-            h.ivThumb.setImageBitmap(FilterAdapter.decodeSampled(imgPath, 160))
+            h.ivThumb.setImageBitmap(decodeSampled(imgPath, 160))
         } else {
             h.ivThumb.visibility = View.GONE
         }
@@ -99,29 +98,13 @@ class FilterAdapter(
 
     class VH(v: View) : RecyclerView.ViewHolder(v) {
         val tvCode: TextView = v.findViewById(R.id.tvCode)
-        val tvTypeBadge: TextView = v.findViewById(R.id.tvTypeBadge)
+        val tvBrandBadge: TextView = v.findViewById(R.id.tvBrandBadge)
         val tvOeChip: TextView = v.findViewById(R.id.tvOeChip)
         val metaRow: FlexboxLayout = v.findViewById(R.id.metaRow)
         val ivThumb: ImageView = v.findViewById(R.id.ivThumb)
     }
 
     companion object {
-        fun typeIcon(type: String) = when (type) {
-            "机油滤芯" -> "🛢️"
-            "空气滤芯" -> "🌬️"
-            "空调滤芯" -> "❄️"
-            "燃油滤芯" -> "⛽"
-            else -> ""
-        }
-
-        fun badgeColors(type: String): Pair<Int, Int> = when (type) {
-            "机油滤芯" -> R.color.oil_bg to R.color.oil_fg
-            "空气滤芯" -> R.color.air_bg to R.color.air_fg
-            "空调滤芯" -> R.color.ac_bg to R.color.ac_fg
-            "燃油滤芯" -> R.color.fuel_bg to R.color.fuel_fg
-            else -> R.color.none_bg to R.color.none_fg
-        }
-
         fun decodeSampled(path: String, reqSize: Int): Bitmap? {
             return try {
                 val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }

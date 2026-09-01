@@ -4,7 +4,8 @@ import org.json.JSONObject
 
 data class FilterItem(
     var id: Long = 0,
-    var type: String = "",
+    /** 品牌（AD / 玖壳 / 默利森 …） */
+    var brand: String = "",
     var goodsCode: String = "",
     var oeCode: String = "",
     var carModel: String = "",
@@ -18,7 +19,7 @@ data class FilterItem(
 
     fun toJson(): JSONObject = JSONObject().apply {
         put("id", id)
-        put("type", type)
+        put("brand", brand)
         put("goods_code", goodsCode)
         put("oe_code", oeCode)
         put("car_model", carModel)
@@ -33,7 +34,10 @@ data class FilterItem(
     companion object {
         fun fromJson(o: JSONObject): FilterItem = FilterItem(
             id = o.optLong("id", System.currentTimeMillis()),
-            type = o.optString("type"),
+            // 兼容旧版本字段名 type（原滤芯类型），旧值不在品牌列表中则丢弃
+            brand = o.optString("brand").ifBlank {
+                o.optString("type").takeIf { Brands.ALL.contains(it) } ?: ""
+            },
             goodsCode = o.optString("goods_code"),
             oeCode = o.optString("oe_code"),
             carModel = o.optString("car_model"),
@@ -54,5 +58,5 @@ val FilterItem.dedupeKey: String
 fun matchesKeyword(item: FilterItem, kwLower: String): Boolean =
     listOf(
         item.goodsCode, item.oeCode, item.carModel, item.specification,
-        item.rubberRing, item.boxInfo, item.notes, item.type
+        item.rubberRing, item.boxInfo, item.notes, item.brand
     ).any { it.lowercase().contains(kwLower) }

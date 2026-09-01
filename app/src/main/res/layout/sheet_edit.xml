@@ -57,10 +57,10 @@
             android:paddingRight="18dp"
             android:paddingBottom="10dp">
 
-            <!-- 类型 -->
+            <!-- 品牌 -->
             <TextView
                 style="@style/FormLabel"
-                android:text="滤芯类型" />
+                android:text="品牌" />
 
             <com.google.android.material.chip.ChipGroup
                 android:id="@+id/chipGroupType"

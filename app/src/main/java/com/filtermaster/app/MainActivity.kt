@@ -50,7 +50,6 @@ class MainActivity : AppCompatActivity() {
 
     private var currentType = "all"
     private var keyword = ""
-
     // ---------- 视图 ----------
     private lateinit var etSearch: EditText
     private lateinit var btnClear: ImageButton
@@ -77,7 +76,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var imgPreviewWrap: View
     private lateinit var ivPreview: ImageView
     private var editingId: Long? = null
-    private var pickedType: String = ""
+    private var pickedBrand: String = ""
     private var currentImagePath: String? = null
 
     // 详情弹层
@@ -88,14 +87,9 @@ class MainActivity : AppCompatActivity() {
     private var pendingCameraFile: File? = null
     private var pendingExportText: String? = null
 
-    private val TYPE_LIST = listOf("机油滤芯", "空气滤芯", "空调滤芯", "燃油滤芯")
-    private val FILTER_TAGS = listOf(
-        "all" to "全部",
-        "机油滤芯" to "🛢️ 机油",
-        "空气滤芯" to "🌬️ 空气",
-        "空调滤芯" to "❄️ 空调",
-        "燃油滤芯" to "⛽ 燃油"
-    )
+    private val TYPE_LIST = Brands.ALL
+    private val FILTER_TAGS: List<Pair<String, String>> =
+        listOf("all" to "全部") + Brands.ALL.map { it to it }
     private val tagViews = mutableMapOf<String, TextView>()
 
     // ---------- ActivityResult ----------
@@ -265,7 +259,7 @@ class MainActivity : AppCompatActivity() {
     private fun renderList() {
         displayed.clear()
         displayed.addAll(items.asSequence()
-            .filter { currentType == "all" || it.type == currentType }
+            .filter { currentType == "all" || it.brand == currentType }
             .filter { keyword.isEmpty() || matchesKeyword(it, keyword.lowercase()) }
             .toList())
 
@@ -336,9 +330,8 @@ class MainActivity : AppCompatActivity() {
     private fun buildTypeChips() {
         chipGroupType.removeAllViews()
         chipGroupType.isSingleSelection = true
-        TYPE_LIST.forEach { type ->
-            val chip = Chip(this)
-            chip.text = "${FilterAdapter.typeIcon(type)} ${type.removeSuffix("滤芯")}"
+        TYPE_LIST.forEach { type ->            val chip = Chip(this)
+            chip.text = type
             chip.isCheckable = true
             chip.tag = type
             chip.chipStrokeWidth = 0f
@@ -362,14 +355,14 @@ class MainActivity : AppCompatActivity() {
             )
             chip.textSize = 14f
             chip.setOnCheckedChangeListener { _, isChecked ->
-                if (isChecked) pickedType = chip.tag as String
+                if (isChecked) pickedBrand = chip.tag as String
             }
             chipGroupType.addView(chip)
         }
     }
 
-    private fun setTypeChipChecked(type: String) {
-        pickedType = type
+    private fun setBrandChipChecked(type: String) {
+        pickedBrand = type
         (0 until chipGroupType.childCount).forEach { i ->
             val c = chipGroupType.getChildAt(i) as Chip
             c.isChecked = (c.tag == type && type.isNotEmpty())
@@ -378,7 +371,6 @@ class MainActivity : AppCompatActivity() {
 
     private fun openEditor(item: FilterItem?) {
         val dialog = ensureEditDialog()
-        // id==0 表示来自车型库的预填模板，仍按新增处理
         editingId = item?.id?.takeIf { it != 0L }
         editTitle.text = if (item == null) "新增滤芯" else "编辑滤芯"
         etGoodsCode.setText(item?.goodsCode.orEmpty())
@@ -389,7 +381,7 @@ class MainActivity : AppCompatActivity() {
         etBox.setText(item?.boxInfo.orEmpty())
         etNotes.setText(item?.notes.orEmpty())
         currentImagePath = item?.imagePath
-        setTypeChipChecked(item?.type.orEmpty())
+        setBrandChipChecked(item?.brand.orEmpty())
         refreshPreview()
         dialog.show()
     }
@@ -418,7 +410,7 @@ class MainActivity : AppCompatActivity() {
             if (idx >= 0) {
                 val old = items[idx]
                 items[idx] = old.copy(
-                    type = pickedType,
+                    brand = pickedBrand,
                     goodsCode = goods, oeCode = oe, carModel = car,
                     specification = etSpec.text.toString().trim(),
                     rubberRing = etRing.text.toString().trim(),
@@ -430,7 +422,7 @@ class MainActivity : AppCompatActivity() {
         } else {
             items.add(0, FilterItem(
                 id = System.currentTimeMillis(),
-                type = pickedType,
+                brand = pickedBrand,
                 goodsCode = goods, oeCode = oe, carModel = car,
                 specification = etSpec.text.toString().trim(),
                 rubberRing = etRing.text.toString().trim(),
@@ -489,7 +481,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         val fields = listOf(
-            "类型" to item.type,
+            "品牌" to item.brand,
             "货品编码" to item.goodsCode,
             "OE码" to item.oeCode,
             "车型" to item.carModel,
