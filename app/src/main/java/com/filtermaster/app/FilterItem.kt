@@ -7,9 +7,13 @@ data class FilterItem(
     /** 品牌（AD / 玖壳 / 默利森 …） */
     var brand: String = "",
     var goodsCode: String = "",
+    /** 别称：自己习惯的叫法，方便记忆 */
+    var alias: String = "",
     var oeCode: String = "",
     var carModel: String = "",
     var specification: String = "",
+    /** 位置：库房存放位置（几号架 / 几号箱） */
+    var location: String = "",
     var rubberRing: String = "",
     var boxInfo: String = "",
     var notes: String = "",
@@ -21,9 +25,11 @@ data class FilterItem(
         put("id", id)
         put("brand", brand)
         put("goods_code", goodsCode)
+        put("alias", alias)
         put("oe_code", oeCode)
         put("car_model", carModel)
         put("specification", specification)
+        put("location", location)
         put("rubber_ring", rubberRing)
         put("box_info", boxInfo)
         put("notes", notes)
@@ -39,9 +45,11 @@ data class FilterItem(
                 o.optString("type").takeIf { Brands.ALL.contains(it) } ?: ""
             },
             goodsCode = o.optString("goods_code"),
+            alias = o.optString("alias"),
             oeCode = o.optString("oe_code"),
             carModel = o.optString("car_model"),
             specification = o.optString("specification"),
+            location = o.optString("location"),
             rubberRing = o.optString("rubber_ring"),
             boxInfo = o.optString("box_info"),
             notes = o.optString("notes"),
@@ -57,6 +65,6 @@ val FilterItem.dedupeKey: String
 
 fun matchesKeyword(item: FilterItem, kwLower: String): Boolean =
     listOf(
-        item.goodsCode, item.oeCode, item.carModel, item.specification,
-        item.rubberRing, item.boxInfo, item.notes, item.brand
+        item.goodsCode, item.alias, item.oeCode, item.carModel, item.specification,
+        item.location, item.rubberRing, item.boxInfo, item.notes, item.brand
     ).any { it.lowercase().contains(kwLower) }

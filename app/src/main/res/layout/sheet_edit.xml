@@ -62,14 +62,34 @@
                 style="@style/FormLabel"
                 android:text="品牌" />
 
-            <com.google.android.material.chip.ChipGroup
-                android:id="@+id/chipGroupType"
+            <LinearLayout
+                android:id="@+id/brandSelector"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                app:chipSpacingHorizontal="8dp"
-                app:selectionRequired="false"
-                app:singleSelection="true"
-                 />
+                android:layout_height="46dp"
+                android:background="@drawable/bg_field"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingLeft="14dp"
+                android:paddingRight="12dp">
+
+                <TextView
+                    android:id="@+id/tvBrandPicked"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="请选择品牌"
+                    android:textColor="#A6AFC0"
+                    android:textSize="15sp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="▾"
+                    android:textColor="#8590A5"
+                    android:textSize="16sp" />
+            </LinearLayout>
 
             <!-- 货品编码 -->
             <TextView style="@style/FormLabel" android:text="货品编码 *" />
@@ -77,6 +97,14 @@
                 android:id="@+id/etGoodsCode"
                 style="@style/FormInput"
                 android:hint="请输入货品编码"
+                android:inputType="text" />
+
+            <!-- 别称 -->
+            <TextView style="@style/FormLabel" android:text="别称" />
+            <EditText
+                android:id="@+id/etAlias"
+                style="@style/FormInput"
+                android:hint="自己习惯的叫法，方便记忆"
                 android:inputType="text" />
 
             <!-- OE码 -->
@@ -124,6 +152,14 @@
                 android:id="@+id/etSpec"
                 style="@style/FormInput"
                 android:hint="如：φ68×142"
+                android:inputType="text" />
+
+            <!-- 位置 -->
+            <TextView style="@style/FormLabel" android:text="位置" />
+            <EditText
+                android:id="@+id/etLocation"
+                style="@style/FormInput"
+                android:hint="如：A区 3号架 2层"
                 android:inputType="text" />
 
             <!-- 胶圈 -->

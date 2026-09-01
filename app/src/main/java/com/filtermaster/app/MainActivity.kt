@@ -6,7 +6,6 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.ActivityNotFoundException
 import android.content.pm.PackageManager
-import android.content.res.ColorStateList
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
@@ -34,8 +33,6 @@ import androidx.core.content.FileProvider
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.bottomsheet.BottomSheetDialog
-import com.google.android.material.chip.Chip
-import com.google.android.material.chip.ChipGroup
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import java.io.File
@@ -65,11 +62,14 @@ class MainActivity : AppCompatActivity() {
     // 编辑弹层视图（懒加载）
     private var editDialog: BottomSheetDialog? = null
     private lateinit var editTitle: TextView
-    private lateinit var chipGroupType: ChipGroup
+    private lateinit var brandSelector: View
+    private lateinit var tvBrandPicked: TextView
     private lateinit var etGoodsCode: EditText
+    private lateinit var etAlias: EditText
     private lateinit var etOeCode: EditText
     private lateinit var etCarModel: EditText
     private lateinit var etSpec: EditText
+    private lateinit var etLocation: EditText
     private lateinit var etRing: EditText
     private lateinit var etBox: EditText
     private lateinit var etNotes: EditText
@@ -87,7 +87,6 @@ class MainActivity : AppCompatActivity() {
     private var pendingCameraFile: File? = null
     private var pendingExportText: String? = null
 
-    private val TYPE_LIST = Brands.ALL
     private val FILTER_TAGS: List<Pair<String, String>> =
         listOf("all" to "全部") + Brands.ALL.map { it to it }
     private val tagViews = mutableMapOf<String, TextView>()
@@ -219,14 +218,16 @@ class MainActivity : AppCompatActivity() {
         currentType = type
         tagViews.forEach { (t, v) ->
             if (t == type) {
-                // 实心深蓝底 + 白字，高对比
-                v.background?.mutate()?.setTint(ContextCompat.getColor(this, R.color.primary_deep))
-                v.setTextColor(Color.WHITE)
-                v.setTypeface(v.typeface, android.graphics.Typeface.BOLD)
+                // 选中：白底 + 蓝色粗体字，在蓝色渐变头部上对比最强
+                v.background?.mutate()?.setTint(Color.WHITE)
+                v.setTextColor(ContextCompat.getColor(this, R.color.primary_deep))
+                v.setTypeface(android.graphics.Typeface.DEFAULT_BOLD)
+                v.elevation = dp(3).toFloat()
             } else {
-                v.background?.mutate()?.setTint(Color.parseColor("#29FFFFFF"))
-                v.setTextColor(Color.parseColor("#E6FFFFFF"))
-                v.setTypeface(v.typeface, android.graphics.Typeface.NORMAL)
+                v.background?.mutate()?.setTint(Color.parseColor("#1FFFFFFF"))
+                v.setTextColor(Color.parseColor("#CCFFFFFF"))
+                v.setTypeface(android.graphics.Typeface.DEFAULT)
+                v.elevation = 0f
             }
         }
     }
@@ -296,18 +297,21 @@ class MainActivity : AppCompatActivity() {
         dialog.setContentView(view)
 
         editTitle = view.findViewById(R.id.sheetTitle)
-        chipGroupType = view.findViewById(R.id.chipGroupType)
+        brandSelector = view.findViewById(R.id.brandSelector)
+        tvBrandPicked = view.findViewById(R.id.tvBrandPicked)
         etGoodsCode = view.findViewById(R.id.etGoodsCode)
+        etAlias = view.findViewById(R.id.etAlias)
         etOeCode = view.findViewById(R.id.etOeCode)
         etCarModel = view.findViewById(R.id.etCarModel)
         etSpec = view.findViewById(R.id.etSpec)
+        etLocation = view.findViewById(R.id.etLocation)
         etRing = view.findViewById(R.id.etRing)
         etBox = view.findViewById(R.id.etBox)
         etNotes = view.findViewById(R.id.etNotes)
         imgPreviewWrap = view.findViewById(R.id.imgPreviewWrap)
         ivPreview = view.findViewById(R.id.ivPreview)
 
-        buildTypeChips()
+        brandSelector.setOnClickListener { showBrandPicker() }
 
         view.findViewById<ImageButton>(R.id.btnSheetClose).setOnClickListener { dialog.dismiss() }
         view.findViewById<View>(R.id.btnCancel).setOnClickListener { dialog.dismiss() }
@@ -327,45 +331,28 @@ class MainActivity : AppCompatActivity() {
         return dialog
     }
 
-    private fun buildTypeChips() {
-        chipGroupType.removeAllViews()
-        chipGroupType.isSingleSelection = true
-        TYPE_LIST.forEach { type ->            val chip = Chip(this)
-            chip.text = type
-            chip.isCheckable = true
-            chip.tag = type
-            chip.chipStrokeWidth = 0f
-            chip.isCheckedIconVisible = false
-            // 选中：实心蓝底白字，未选中：灰底深字（高对比度）
-            chip.chipBackgroundColor = ColorStateList(
-                arrayOf(
-                    intArrayOf(android.R.attr.state_checked),
-                    intArrayOf()
-                ),
-                intArrayOf(Color.parseColor("#2F6BFF"), Color.parseColor("#F4F6FB"))
-            )
-            chip.setTextColor(
-                ColorStateList(
-                    arrayOf(
-                        intArrayOf(android.R.attr.state_checked),
-                        intArrayOf()
-                    ),
-                    intArrayOf(Color.WHITE, Color.parseColor("#55627A"))
-                )
-            )
-            chip.textSize = 14f
-            chip.setOnCheckedChangeListener { _, isChecked ->
-                if (isChecked) pickedBrand = chip.tag as String
+    // ---------- 品牌选择 ----------
+    private fun showBrandPicker() {
+        val options = arrayOf("（不指定）") + Brands.ALL.toTypedArray()
+        val checked = if (pickedBrand.isBlank()) 0 else Brands.ALL.indexOf(pickedBrand) + 1
+        AlertDialog.Builder(this)
+            .setTitle("选择品牌")
+            .setSingleChoiceItems(options, checked) { dlg, which ->
+                setPickedBrand(if (which == 0) "" else Brands.ALL[which - 1])
+                dlg.dismiss()
             }
-            chipGroupType.addView(chip)
-        }
+            .setNegativeButton("取消", null)
+            .show()
     }
 
-    private fun setBrandChipChecked(type: String) {
-        pickedBrand = type
-        (0 until chipGroupType.childCount).forEach { i ->
-            val c = chipGroupType.getChildAt(i) as Chip
-            c.isChecked = (c.tag == type && type.isNotEmpty())
+    private fun setPickedBrand(brand: String) {
+        pickedBrand = brand
+        if (brand.isBlank()) {
+            tvBrandPicked.text = "请选择品牌"
+            tvBrandPicked.setTextColor(Color.parseColor("#A6AFC0"))
+        } else {
+            tvBrandPicked.text = brand
+            tvBrandPicked.setTextColor(ContextCompat.getColor(this, R.color.text_main))
         }
     }
 
@@ -374,14 +361,16 @@ class MainActivity : AppCompatActivity() {
         editingId = item?.id?.takeIf { it != 0L }
         editTitle.text = if (item == null) "新增滤芯" else "编辑滤芯"
         etGoodsCode.setText(item?.goodsCode.orEmpty())
+        etAlias.setText(item?.alias.orEmpty())
         etOeCode.setText(item?.oeCode.orEmpty())
         etCarModel.setText(item?.carModel.orEmpty())
         etSpec.setText(item?.specification.orEmpty())
+        etLocation.setText(item?.location.orEmpty())
         etRing.setText(item?.rubberRing.orEmpty())
         etBox.setText(item?.boxInfo.orEmpty())
         etNotes.setText(item?.notes.orEmpty())
         currentImagePath = item?.imagePath
-        setBrandChipChecked(item?.brand.orEmpty())
+        setPickedBrand(item?.brand.orEmpty())
         refreshPreview()
         dialog.show()
     }
@@ -398,10 +387,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun saveFromEditor() {
         val goods = etGoodsCode.text.toString().trim()
+        val alias = etAlias.text.toString().trim()
         val oe = etOeCode.text.toString().trim()
         val car = etCarModel.text.toString().trim()
-        if (goods.isEmpty() && oe.isEmpty() && car.isEmpty()) {
-            toast("请至少填写 编码 / OE码 / 车型")
+        if (goods.isEmpty() && oe.isEmpty() && car.isEmpty() && alias.isEmpty()) {
+            toast("请至少填写 编码 / 别称 / OE码 / 车型")
             return
         }
         val eid = editingId
@@ -411,8 +401,9 @@ class MainActivity : AppCompatActivity() {
                 val old = items[idx]
                 items[idx] = old.copy(
                     brand = pickedBrand,
-                    goodsCode = goods, oeCode = oe, carModel = car,
+                    goodsCode = goods, alias = alias, oeCode = oe, carModel = car,
                     specification = etSpec.text.toString().trim(),
+                    location = etLocation.text.toString().trim(),
                     rubberRing = etRing.text.toString().trim(),
                     boxInfo = etBox.text.toString().trim(),
                     notes = etNotes.text.toString().trim(),
@@ -423,8 +414,9 @@ class MainActivity : AppCompatActivity() {
             items.add(0, FilterItem(
                 id = System.currentTimeMillis(),
                 brand = pickedBrand,
-                goodsCode = goods, oeCode = oe, carModel = car,
+                goodsCode = goods, alias = alias, oeCode = oe, carModel = car,
                 specification = etSpec.text.toString().trim(),
+                location = etLocation.text.toString().trim(),
                 rubberRing = etRing.text.toString().trim(),
                 boxInfo = etBox.text.toString().trim(),
                 notes = etNotes.text.toString().trim(),
@@ -483,9 +475,11 @@ class MainActivity : AppCompatActivity() {
         val fields = listOf(
             "品牌" to item.brand,
             "货品编码" to item.goodsCode,
+            "别称" to item.alias,
             "OE码" to item.oeCode,
             "车型" to item.carModel,
             "规格" to item.specification,
+            "位置" to item.location,
             "胶圈" to item.rubberRing,
             "盒子" to item.boxInfo,
             "备注" to item.notes

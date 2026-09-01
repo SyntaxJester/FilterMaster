@@ -51,6 +51,14 @@ class FilterAdapter(
             h.tvBrandBadge.setTextColor(ContextCompat.getColor(ctx, fg))
         }
 
+        // 别称（有则在编码下方单独一行显示）
+        if (item.alias.isBlank()) {
+            h.tvAlias.visibility = View.GONE
+        } else {
+            h.tvAlias.visibility = View.VISIBLE
+            h.tvAlias.text = "别称：${item.alias}"
+        }
+
         // OE 码芯片
         if (item.oeCode.isBlank()) {
             h.tvOeChip.visibility = View.GONE
@@ -64,6 +72,7 @@ class FilterAdapter(
         listOf(
             "车型" to item.carModel,
             "规格" to item.specification,
+            "位置" to item.location,
             "胶圈" to item.rubberRing,
             "盒子" to item.boxInfo
         ).filter { it.second.isNotBlank() }.forEach { (label, value) ->
@@ -99,6 +108,7 @@ class FilterAdapter(
     class VH(v: View) : RecyclerView.ViewHolder(v) {
         val tvCode: TextView = v.findViewById(R.id.tvCode)
         val tvBrandBadge: TextView = v.findViewById(R.id.tvBrandBadge)
+        val tvAlias: TextView = v.findViewById(R.id.tvAlias)
         val tvOeChip: TextView = v.findViewById(R.id.tvOeChip)
         val metaRow: FlexboxLayout = v.findViewById(R.id.metaRow)
         val ivThumb: ImageView = v.findViewById(R.id.ivThumb)
