@@ -166,33 +166,17 @@
                 android:textSize="13sp" />
 
             <TextView
-                android:id="@+id/btnImport"
+                android:id="@+id/btnBackup"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:background="@drawable/bg_rounded_8"
                 android:backgroundTint="#FFFFFF"
                 android:elevation="2dp"
-                android:paddingLeft="13dp"
-                android:paddingRight="13dp"
+                android:paddingLeft="14dp"
+                android:paddingRight="14dp"
                 android:paddingTop="7dp"
                 android:paddingBottom="7dp"
-                android:text="📥 导入"
-                android:textColor="#55627A"
-                android:textSize="12.5sp" />
-
-            <TextView
-                android:id="@+id/btnExport"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:background="@drawable/bg_rounded_8"
-                android:backgroundTint="#FFFFFF"
-                android:elevation="2dp"
-                android:paddingLeft="13dp"
-                android:paddingRight="13dp"
-                android:paddingTop="7dp"
-                android:paddingBottom="7dp"
-                android:text="📤 导出"
+                android:text="🗄️ 备份与恢复"
                 android:textColor="#55627A"
                 android:textSize="12.5sp" />
         </LinearLayout>

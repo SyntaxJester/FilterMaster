@@ -85,7 +85,7 @@ class MainActivity : AppCompatActivity() {
 
     private var scanMode = "edit"   // edit: 填OE码 | search: 填搜索框
     private var pendingCameraFile: File? = null
-    private var pendingExportText: String? = null
+    private var pendingBackupFile: File? = null
 
     private val FILTER_TAGS: List<Pair<String, String>> =
         listOf("all" to "全部") + Brands.ALL.map { it to it }
@@ -119,26 +119,28 @@ class MainActivity : AppCompatActivity() {
             uri?.let { importImageFromUri(it) }
         }
 
-    private val exportLauncher =
-        registerForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
-            val text = pendingExportText
-            if (uri != null && text != null) {
+    /** 备份：把打包好的 ZIP 写到用户选定位置 */
+    private val backupSaveLauncher =
+        registerForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+            val src = pendingBackupFile
+            if (uri != null && src != null && src.exists()) {
                 runCatching {
                     contentResolver.openOutputStream(uri)?.use { out ->
-                        out.write(text.toByteArray(Charsets.UTF_8))
-                    }
+                        java.io.FileInputStream(src).use { it.copyTo(out) }
+                    } ?: throw IllegalStateException("无法写入所选位置")
                 }.onSuccess {
-                    toast("导出成功 ✓")
+                    toast("已备份 ${items.size} 条记录 ✓")
                 }.onFailure {
-                    toast("导出失败：${it.message}")
+                    toast("备份失败：${it.message}")
                 }
             }
-            pendingExportText = null
+            pendingBackupFile = null
         }
 
-    private val importLauncher =
+    /** 恢复：读取用户选定的 ZIP 备份 */
+    private val backupOpenLauncher =
         registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-            uri?.let { importCsvFromUri(it) }
+            uri?.let { restoreFromUri(it) }
         }
 
     // 相机运行时权限：声明了 CAMERA 权限后，未授权直接调起系统相机会闪退
@@ -252,8 +254,7 @@ class MainActivity : AppCompatActivity() {
         findViewById<ImageButton>(R.id.btnScanSearch).setOnClickListener { startScan("search") }
         findViewById<View>(R.id.fabScan).setOnClickListener { startScan("search") }
         findViewById<View>(R.id.fabAdd).setOnClickListener { openEditor(null) }
-        findViewById<TextView>(R.id.btnImport).setOnClickListener { startImport() }
-        findViewById<TextView>(R.id.btnExport).setOnClickListener { startExport() }
+        findViewById<TextView>(R.id.btnBackup).setOnClickListener { showBackupSheet() }
     }
 
     // ---------- 列表渲染 ----------
@@ -660,56 +661,294 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ---------- 导出 / 导入 ----------
-    private fun startExport() {
-        if (items.isEmpty()) { toast("暂无数据可导出"); return }
-        pendingExportText = CsvUtil.exportRows(items)
-        exportLauncher.launch(CsvUtil.todayName())
-    }
+    // ==================== 备份与恢复 ====================
+    private fun showBackupSheet() {
+        val dialog = BottomSheetDialog(this)
+        val view = layoutInflater.inflate(R.layout.sheet_backup, null)
+        dialog.setContentView(view)
 
-    private fun startImport() {
-        importLauncher.launch(arrayOf(
-            "text/csv",
-            "text/comma-separated-values",
-            "text/plain",
-            "text/*"
-        ))
-    }
+        val summary = view.findViewById<TextView>(R.id.tvBackupSummary)
+        summary.text = "当前共 ${items.size} 条记录" +
+                items.count { !it.imagePath.isNullOrBlank() }.let { if (it > 0) "，其中 $it 条带照片" else "" }
 
-    private fun importCsvFromUri(uri: Uri) {
-        try {
-            val text = contentResolver.openInputStream(uri)?.use {
-                it.readBytes().toString(Charsets.UTF_8)
-            } ?: return
-            val newItems = CsvUtil.toItems(CsvUtil.parse(text))
-            if (newItems.isEmpty()) { toast("未发现有效数据"); return }
-
-            val existKeys = items.map { it.dedupeKey }.filter { it != "|" }.toHashSet()
-            val fresh = mutableListOf<FilterItem>()
-            var dupes = 0
-            newItems.forEach { n ->
-                if (n.dedupeKey != "|" && existKeys.contains(n.dedupeKey)) dupes++
-                else { existKeys.add(n.dedupeKey); fresh.add(n) }
+        val cloudStatus = view.findViewById<TextView>(R.id.tvCloudStatus)
+        fun refreshCloudStatus() {
+            val cfg = CloudPrefs.load(this)
+            if (cfg.isReady) {
+                cloudStatus.text = "已配置 · ${cfg.user}"
+                cloudStatus.setTextColor(ContextCompat.getColor(this, R.color.green))
+            } else {
+                cloudStatus.text = "未配置"
+                cloudStatus.setTextColor(ContextCompat.getColor(this, R.color.text_sub))
             }
-            val msg = buildString {
-                append("发现 ${fresh.size} 条新记录")
-                if (dupes > 0) append("（$dupes 条重复已跳过）")
-                append("，是否导入？")
-            }
-            AlertDialog.Builder(this)
-                .setTitle("导入确认")
-                .setMessage(msg)
-                .setPositiveButton("导入") { _, _ ->
-                    items.addAll(0, fresh)
-                    FilterStore.save(this, items)
-                    renderList()
-                    toast("导入成功 ✓")
-                }
-                .setNegativeButton("取消", null)
-                .show()
-        } catch (e: Exception) {
-            toast("导入失败：${e.message}")
         }
+        refreshCloudStatus()
+
+        view.findViewById<ImageButton>(R.id.btnBackupClose).setOnClickListener { dialog.dismiss() }
+        view.findViewById<View>(R.id.btnLocalBackup).setOnClickListener {
+            dialog.dismiss(); startLocalBackup()
+        }
+        view.findViewById<View>(R.id.btnLocalRestore).setOnClickListener {
+            dialog.dismiss(); startLocalRestore()
+        }
+        view.findViewById<View>(R.id.btnCloudBackup).setOnClickListener {
+            dialog.dismiss(); startCloudBackup()
+        }
+        view.findViewById<View>(R.id.btnCloudRestore).setOnClickListener {
+            dialog.dismiss(); startCloudRestore()
+        }
+        view.findViewById<View>(R.id.btnCloudSetting).setOnClickListener {
+            showCloudConfig { refreshCloudStatus() }
+        }
+        dialog.show()
+    }
+
+    // ---------- 本地 ----------
+    private fun startLocalBackup() {
+        if (items.isEmpty()) { toast("暂无数据可备份"); return }
+        try {
+            pendingBackupFile = BackupUtil.createBackup(this, items)
+            backupSaveLauncher.launch(BackupUtil.backupFileName())
+        } catch (e: Exception) {
+            toast("打包失败：${e.message}")
+        }
+    }
+
+    private fun startLocalRestore() {
+        backupOpenLauncher.launch(arrayOf("application/zip", "application/octet-stream", "*/*"))
+    }
+
+    private fun restoreFromUri(uri: Uri) {
+        try {
+            val cached = contentResolver.openInputStream(uri)?.use {
+                BackupUtil.cacheFrom(this, it, "restore.zip")
+            } ?: run { toast("无法读取所选文件"); return }
+            applyRestore(cached, "本地文件")
+        } catch (e: Exception) {
+            toast("恢复失败：${e.message}")
+        }
+    }
+
+    /** 解析备份并弹窗让用户选择合并或覆盖 */
+    private fun applyRestore(zip: File, sourceLabel: String) {
+        val result = try {
+            BackupUtil.readBackup(this, zip)
+        } catch (e: Exception) {
+            toast("恢复失败：${e.message}")
+            return
+        }
+        if (result.items.isEmpty()) { toast("备份中没有记录"); return }
+
+        val existKeys = items.map { it.dedupeKey }.filter { it != "|" }.toHashSet()
+        val fresh = result.items.filter { it.dedupeKey == "|" || !existKeys.contains(it.dedupeKey) }
+        val dupes = result.items.size - fresh.size
+
+        val msg = buildString {
+            append("来源：$sourceLabel\n")
+            if (result.exportedAt.isNotBlank()) append("备份时间：${result.exportedAt}\n")
+            append("包含记录：${result.items.size} 条")
+            if (result.imageCount > 0) append("，照片 ${result.imageCount} 张")
+            append("\n\n合并：新增 ${fresh.size} 条")
+            if (dupes > 0) append("，跳过重复 $dupes 条")
+            append("\n覆盖：清空现有 ${items.size} 条后写入 ${result.items.size} 条")
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("恢复数据")
+            .setMessage(msg)
+            .setPositiveButton("合并") { _, _ ->
+                items.addAll(0, fresh)
+                FilterStore.save(this, items)
+                renderList()
+                toast("已合并 ${fresh.size} 条 ✓")
+            }
+            .setNeutralButton("覆盖") { _, _ ->
+                AlertDialog.Builder(this)
+                    .setTitle("确认覆盖")
+                    .setMessage("现有 ${items.size} 条记录将被删除且无法找回，确定继续？")
+                    .setPositiveButton("确定覆盖") { _, _ ->
+                        items.clear()
+                        items.addAll(result.items)
+                        FilterStore.save(this, items)
+                        renderList()
+                        toast("已恢复 ${items.size} 条 ✓")
+                    }
+                    .setNegativeButton("取消", null)
+                    .show()
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    // ---------- 坚果云配置 ----------
+    private fun showCloudConfig(onSaved: () -> Unit) {
+        val view = layoutInflater.inflate(R.layout.dialog_cloud_config, null)
+        val etUrl = view.findViewById<EditText>(R.id.etDavUrl)
+        val etUser = view.findViewById<EditText>(R.id.etDavUser)
+        val etPass = view.findViewById<EditText>(R.id.etDavPass)
+        val etDir = view.findViewById<EditText>(R.id.etDavDir)
+
+        val cfg = CloudPrefs.load(this)
+        etUrl.setText(cfg.url)
+        etUser.setText(cfg.user)
+        etPass.setText(cfg.pass)
+        etDir.setText(cfg.dir)
+
+        AlertDialog.Builder(this)
+            .setTitle("坚果云 / WebDAV 配置")
+            .setView(view)
+            .setPositiveButton("保存并测试") { _, _ ->
+                val next = CloudPrefs.Config(
+                    url = etUrl.text.toString().trim().ifBlank { CloudPrefs.DEFAULT_URL },
+                    user = etUser.text.toString().trim(),
+                    pass = etPass.text.toString(),
+                    dir = etDir.text.toString().trim().ifBlank { CloudPrefs.DEFAULT_DIR }
+                )
+                if (!next.isReady) { toast("请完整填写地址、账户与应用密码"); return@setPositiveButton }
+                CloudPrefs.save(this, next)
+                onSaved()
+                testCloud(next)
+            }
+            .setNeutralButton("清除") { _, _ ->
+                CloudPrefs.clear(this)
+                onSaved()
+                toast("已清除云端配置")
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun testCloud(cfg: CloudPrefs.Config) {
+        val progress = showProgress("正在测试连接…")
+        runAsync(
+            work = {
+                val client = CloudPrefs.clientOf(cfg)
+                client.ensureDir(cfg.dir)
+                client.testConnection(cfg.dir)
+                client.listBackups(cfg.dir).size
+            },
+            done = { count ->
+                progress.dismiss()
+                toast("连接成功，云端已有 $count 个备份 ✓")
+            },
+            fail = { e ->
+                progress.dismiss()
+                showError("连接失败", e)
+            }
+        )
+    }
+
+    // ---------- 云备份 ----------
+    private fun startCloudBackup() {
+        val cfg = CloudPrefs.load(this)
+        if (!cfg.isReady) { toast("请先配置坚果云账号"); showCloudConfig { }; return }
+        if (items.isEmpty()) { toast("暂无数据可备份"); return }
+
+        val progress = showProgress("正在上传备份…")
+        val snapshot = items.toList()
+        runAsync(
+            work = {
+                val zip = BackupUtil.createBackup(this, snapshot)
+                val client = CloudPrefs.clientOf(cfg)
+                client.upload(cfg.dir, zip)
+                zip.name
+            },
+            done = { name ->
+                progress.dismiss()
+                AlertDialog.Builder(this)
+                    .setTitle("云备份完成")
+                    .setMessage("已上传 ${snapshot.size} 条记录\n\n文件名：$name\n位置：${cfg.dir}/")
+                    .setPositiveButton("知道了", null)
+                    .show()
+            },
+            fail = { e ->
+                progress.dismiss()
+                showError("上传失败", e)
+            }
+        )
+    }
+
+    private fun startCloudRestore() {
+        val cfg = CloudPrefs.load(this)
+        if (!cfg.isReady) { toast("请先配置坚果云账号"); showCloudConfig { }; return }
+
+        val progress = showProgress("正在获取云端备份…")
+        runAsync(
+            work = { CloudPrefs.clientOf(cfg).listBackups(cfg.dir) },
+            done = { list ->
+                progress.dismiss()
+                if (list.isEmpty()) {
+                    toast("云端没有找到备份文件")
+                    return@runAsync
+                }
+                val labels = list.map { f ->
+                    val sizeText = if (f.size > 0) " · ${f.size / 1024} KB" else ""
+                    f.name + sizeText
+                }.toTypedArray()
+                AlertDialog.Builder(this)
+                    .setTitle("选择要恢复的备份")
+                    .setItems(labels) { _, which -> downloadAndRestore(cfg, list[which].name) }
+                    .setNegativeButton("取消", null)
+                    .show()
+            },
+            fail = { e ->
+                progress.dismiss()
+                showError("获取列表失败", e)
+            }
+        )
+    }
+
+    private fun downloadAndRestore(cfg: CloudPrefs.Config, name: String) {
+        val progress = showProgress("正在下载 $name …")
+        runAsync(
+            work = {
+                val dir = File(cacheDir, "restore")
+                if (!dir.exists()) dir.mkdirs()
+                dir.listFiles()?.forEach { it.delete() }
+                val dest = File(dir, name)
+                CloudPrefs.clientOf(cfg).download(cfg.dir, name, dest)
+                dest
+            },
+            done = { file ->
+                progress.dismiss()
+                applyRestore(file, "坚果云 · $name")
+            },
+            fail = { e ->
+                progress.dismiss()
+                showError("下载失败", e)
+            }
+        )
+    }
+
+    // ---------- 异步与提示 ----------
+    private fun <T> runAsync(work: () -> T, done: (T) -> Unit, fail: (Throwable) -> Unit) {
+        Thread {
+            val result = runCatching(work)
+            runOnUiThread {
+                result.onSuccess(done).onFailure(fail)
+            }
+        }.start()
+    }
+
+    private fun showProgress(text: String): AlertDialog {
+        val tv = TextView(this)
+        tv.text = text
+        tv.textSize = 14.5f
+        tv.setPadding(dp(24), dp(24), dp(24), dp(24))
+        tv.setTextColor(ContextCompat.getColor(this, R.color.text_main))
+        return AlertDialog.Builder(this)
+            .setView(tv)
+            .setCancelable(false)
+            .create()
+            .also { it.show() }
+    }
+
+    private fun showError(title: String, e: Throwable) {
+        AlertDialog.Builder(this)
+            .setTitle(title)
+            .setMessage(e.message ?: e.toString())
+            .setPositiveButton("知道了", null)
+            .show()
     }
 
     // ---------- 工具 ----------

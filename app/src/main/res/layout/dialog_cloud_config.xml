@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingLeft="4dp"
+        android:paddingRight="4dp">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="14dp"
+            android:background="@drawable/bg_field"
+            android:padding="12dp"
+            android:text="获取应用密码：坚果云网页版 → 右上角账户 → 账户信息 → 安全选项 → 添加应用 → 生成密码。注意填写生成的应用密码，不是登录密码。"
+            android:textColor="@color/text_sub"
+            android:textSize="12sp" />
+
+        <TextView style="@style/FormLabel" android:text="服务器地址" />
+        <EditText
+            android:id="@+id/etDavUrl"
+            style="@style/FormInput"
+            android:hint="https://dav.jianguoyun.com/dav/"
+            android:importantForAutofill="no"
+            android:inputType="textUri" />
+
+        <TextView style="@style/FormLabel" android:text="账户（注册邮箱）" />
+        <EditText
+            android:id="@+id/etDavUser"
+            style="@style/FormInput"
+            android:hint="you@example.com"
+            android:importantForAutofill="no"
+            android:inputType="textEmailAddress" />
+
+        <TextView style="@style/FormLabel" android:text="应用密码" />
+        <EditText
+            android:id="@+id/etDavPass"
+            style="@style/FormInput"
+            android:hint="坚果云生成的应用密码"
+            android:importantForAutofill="no"
+            android:inputType="textPassword" />
+
+        <TextView style="@style/FormLabel" android:text="云端文件夹" />
+        <EditText
+            android:id="@+id/etDavDir"
+            style="@style/FormInput"
+            android:hint="FilterMaster"
+            android:importantForAutofill="no"
+            android:inputType="text" />
+    </LinearLayout>
+</ScrollView>
