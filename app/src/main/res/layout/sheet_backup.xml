@@ -1,9 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="wrap_content"
-    android:orientation="vertical">
+    android:layout_height="match_parent"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
 
     <View
         android:layout_width="40dp"
@@ -144,6 +148,37 @@
         android:textSize="13.5sp"
         android:textStyle="bold" />
 
+    <!-- ===== 表格导入 ===== -->
+    <TextView
+        style="@style/SectionTitle"
+        android:layout_marginTop="18dp"
+        android:text="📊 表格导入" />
+
+    <TextView
+        android:id="@+id/btnImportSheet"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginLeft="18dp"
+        android:layout_marginRight="18dp"
+        android:background="@drawable/bg_field"
+        android:gravity="center"
+        android:paddingTop="16dp"
+        android:paddingBottom="16dp"
+        android:text="选择 Excel / CSV 文件导入"
+        android:textColor="#33405A"
+        android:textSize="14sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginLeft="18dp"
+        android:layout_marginRight="18dp"
+        android:layout_marginTop="6dp"
+        android:text="支持 .xls / .xlsx / .csv，自动识别表头列名对应到滤芯字段，导入前可逐项调整。"
+        android:textColor="@color/text_sub"
+        android:textSize="11.5sp" />
+
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -156,4 +191,5 @@
         android:text="备份文件为标准 ZIP，含全部记录与照片，可用电脑直接解压查看。恢复时会与现有数据合并并自动跳过重复项。"
         android:textColor="@color/text_sub"
         android:textSize="11.5sp" />
-</LinearLayout>
+    </LinearLayout>
+</ScrollView>

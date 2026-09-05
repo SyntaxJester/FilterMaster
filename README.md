@@ -10,7 +10,22 @@
 - 🖼️ 滤芯照片（拍照 / 相册），自动压缩存储
 - 📋 一键复制 OE 码
 - 🗄️ **备份与恢复**：本地备份到任意位置 / 从本地文件恢复；接入坚果云（WebDAV）实现云备份与云恢复
+- 📊 **表格导入**：直接导入 Excel(.xls/.xlsx) 或 CSV，自动识别表头列名对应到滤芯字段，导入前可逐项调整
 - 💾 数据离线存储在本机（SharedPreferences + 应用私有目录）
+
+## 表格导入
+
+支持三种格式，无需第三方库（.xls 的 OLE2+BIFF8 与 .xlsx 的 OOXML 解析均为内置实现）：
+
+| 格式 | 说明 |
+|---|---|
+| `.xls` | Excel 97-2003，解析 OLE2 复合文档 + BIFF8 记录流 |
+| `.xlsx` | Excel 2007+，解析 ZIP 内的 sharedStrings 与 sheet XML |
+| `.csv` | 自动判断 UTF-8 / GBK 编码，支持引号包裹与制表符分隔 |
+
+**列名自动识别**：表头出现「货品编码 / 型号 / 货号」→ 货品编码，「OEM码 / OE / 原厂编码」→ OE码，「车型 / 适用车型」→ 车型，「库位 / 货位 / 存放」→ 位置，还支持品牌、规格、胶圈、盒子、数量、备注等常见叫法。识别不到的表头可在导入前手动指定对应列。
+
+导入时还可以给整批记录**统一指定品牌**（表格里的供应商名若不在品牌列表中，会保留到备注里，信息不丢）。同一行的多个 OE 码（原表用空格分隔）会归一成 ` / ` 分隔。
 
 ## 备份格式
 
@@ -85,7 +100,12 @@ app/src/main/
 │   ├── FilterAdapter.kt   # 列表适配器
 │   ├── BackupUtil.kt      # 备份 ZIP 打包 / 解包
 │   ├── WebDavClient.kt    # WebDAV 客户端（坚果云）
-│   └── CloudPrefs.kt      # 云端账号配置存储
+│   ├── CloudPrefs.kt      # 云端账号配置存储
+│   └── sheet/             # 表格解析（无第三方依赖）
+│       ├── Ole2Reader.kt    OLE2/CFB 复合文档容器
+│       ├── BiffParser.kt    BIFF8 工作表记录流（.xls）
+│       ├── XlsxReader.kt    OOXML 解析（.xlsx）
+│       └── SheetImporter.kt 列名识别与字段映射
 ├── res/layout/            # 主界面 / 列表项 / 编辑与详情底部弹层
 └── AndroidManifest.xml
 ```

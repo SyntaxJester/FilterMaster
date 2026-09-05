@@ -33,6 +33,7 @@ import androidx.core.content.FileProvider
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.bottomsheet.BottomSheetDialog
+import com.filtermaster.app.sheet.SheetImporter
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import java.io.File
@@ -141,6 +142,12 @@ class MainActivity : AppCompatActivity() {
     private val backupOpenLauncher =
         registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             uri?.let { restoreFromUri(it) }
+        }
+
+    /** 表格导入：Excel / CSV */
+    private val sheetOpenLauncher =
+        registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            uri?.let { startSheetImport(it) }
         }
 
     // 相机运行时权限：声明了 CAMERA 权限后，未授权直接调起系统相机会闪退
@@ -700,6 +707,9 @@ class MainActivity : AppCompatActivity() {
         view.findViewById<View>(R.id.btnCloudSetting).setOnClickListener {
             showCloudConfig { refreshCloudStatus() }
         }
+        view.findViewById<View>(R.id.btnImportSheet).setOnClickListener {
+            dialog.dismiss(); pickSheetFile()
+        }
         dialog.show()
     }
 
@@ -918,6 +928,221 @@ class MainActivity : AppCompatActivity() {
                 showError("下载失败", e)
             }
         )
+    }
+
+    // ==================== 表格导入（Excel / CSV） ====================
+    private fun pickSheetFile() {
+        sheetOpenLauncher.launch(
+            arrayOf(
+                "application/vnd.ms-excel",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "text/csv",
+                "text/comma-separated-values",
+                "text/plain",
+                "application/octet-stream",
+                "*/*"
+            )
+        )
+    }
+
+    private fun startSheetImport(uri: Uri) {
+        val name = queryDisplayName(uri) ?: "import.xls"
+        val progress = showProgress("正在解析 $name …")
+        runAsync(
+            work = {
+                val cached = contentResolver.openInputStream(uri)?.use {
+                    BackupUtil.cacheFrom(this, it, name.ifBlank { "import.xls" })
+                } ?: throw IllegalStateException("无法读取所选文件")
+                SheetImporter.readTables(cached, name)
+            },
+            done = { tables ->
+                progress.dismiss()
+                when {
+                    tables.isEmpty() -> toast("文件里没有找到可导入的数据")
+                    tables.size == 1 -> showMappingDialog(tables[0], name)
+                    else -> {
+                        val labels = tables.map { "${it.sheetName}（${it.rows.size} 行）" }.toTypedArray()
+                        AlertDialog.Builder(this)
+                            .setTitle("选择工作表")
+                            .setItems(labels) { _, which -> showMappingDialog(tables[which], name) }
+                            .setNegativeButton("取消", null)
+                            .show()
+                    }
+                }
+            },
+            fail = { e ->
+                progress.dismiss()
+                showError("解析失败", e)
+            }
+        )
+    }
+
+    private fun queryDisplayName(uri: Uri): String? = runCatching {
+        contentResolver.query(uri, null, null, null, null)?.use { c ->
+            val idx = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+            if (idx >= 0 && c.moveToFirst()) c.getString(idx) else null
+        }
+    }.getOrNull() ?: uri.lastPathSegment?.substringAfterLast('/')
+
+    /** 展示自动识别结果，允许逐项调整后再导入 */
+    private fun showMappingDialog(table: SheetImporter.Table, fileName: String) {
+        val mapping = SheetImporter.autoMap(table)
+        var defaultBrand = ""
+        val view = layoutInflater.inflate(R.layout.dialog_sheet_mapping, null)
+        val summary = view.findViewById<TextView>(R.id.tvMapSummary)
+        val rowsBox = view.findViewById<LinearLayout>(R.id.mapRows)
+        val preview = view.findViewById<TextView>(R.id.tvPreview)
+        val brandRow = view.findViewById<TextView>(R.id.tvDefaultBrand)
+
+        val recognized = SheetImporter.FIELD_LABELS.indices
+            .count { SheetImporter.getField(mapping, it) >= 0 }
+        summary.text = "文件：$fileName\n工作表：${table.sheetName}\n" +
+                "数据行：${table.rows.size} 行，共 ${table.header.size} 列\n" +
+                "已自动识别 $recognized 个字段"
+
+        fun refreshBrandRow() {
+            brandRow.text = if (defaultBrand.isBlank()) "统一品牌：（不设置）" else "统一品牌：$defaultBrand"
+        }
+        refreshBrandRow()
+        brandRow.setOnClickListener {
+            val options = arrayOf("（不设置）") + Brands.ALL.toTypedArray()
+            AlertDialog.Builder(this)
+                .setTitle("导入的记录统一设为哪个品牌？")
+                .setItems(options) { _, which ->
+                    defaultBrand = if (which == 0) "" else Brands.ALL[which - 1]
+                    refreshBrandRow()
+                }
+                .setNegativeButton("取消", null)
+                .show()
+        }
+
+        val colOptions = arrayOf("（不导入）") + table.columnLabels.toTypedArray()
+
+        fun refreshRows() {
+            rowsBox.removeAllViews()
+            SheetImporter.FIELD_LABELS.forEachIndexed { fieldIdx, label ->
+                val col = SheetImporter.getField(mapping, fieldIdx)
+                val row = LinearLayout(this)
+                row.orientation = LinearLayout.HORIZONTAL
+                row.gravity = Gravity.CENTER_VERTICAL
+                row.setPadding(0, dp(5), 0, dp(5))
+                row.isClickable = true
+
+                val k = TextView(this)
+                k.text = label
+                k.textSize = 13.5f
+                k.setTextColor(ContextCompat.getColor(this, R.color.text_main))
+                row.addView(k, LinearLayout.LayoutParams(dp(66), ViewGroup.LayoutParams.WRAP_CONTENT))
+
+                val v = TextView(this)
+                v.textSize = 13f
+                v.background = ContextCompat.getDrawable(this, R.drawable.bg_field)
+                v.setPadding(dp(10), dp(8), dp(10), dp(8))
+                v.maxLines = 1
+                v.ellipsize = android.text.TextUtils.TruncateAt.END
+                if (col >= 0) {
+                    v.text = table.columnLabels.getOrNull(col) ?: "第${col + 1}列"
+                    v.setTextColor(ContextCompat.getColor(this, R.color.primary))
+                } else {
+                    v.text = "（不导入）"
+                    v.setTextColor(ContextCompat.getColor(this, R.color.text_sub))
+                }
+                row.addView(v, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+
+                val onPick = View.OnClickListener {
+                    AlertDialog.Builder(this)
+                        .setTitle("「$label」对应哪一列？")
+                        .setItems(colOptions) { _, which ->
+                            SheetImporter.setField(mapping, fieldIdx, which - 1)
+                            refreshRows()
+                        }
+                        .setNegativeButton("取消", null)
+                        .show()
+                }
+                row.setOnClickListener(onPick)
+                v.setOnClickListener(onPick)
+                rowsBox.addView(row)
+            }
+        }
+        refreshRows()
+
+        preview.text = buildPreview(table)
+
+        AlertDialog.Builder(this)
+            .setTitle("确认导入设置")
+            .setView(view)
+            .setPositiveButton("开始导入") { _, _ -> doSheetImport(table, mapping, defaultBrand) }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun buildPreview(table: SheetImporter.Table): String = buildString {
+        val cols = minOf(table.header.size, 4)
+        append(table.header.take(cols).joinToString(" | ") { trunc(it, 10) })
+        append("\n")
+        append("─".repeat(30))
+        table.rows.take(3).forEach { row ->
+            append("\n")
+            append((0 until cols).joinToString(" | ") { trunc(row.getOrNull(it).orEmpty(), 10) })
+        }
+        if (table.rows.size > 3) append("\n… 其余 ${table.rows.size - 3} 行")
+        if (table.header.size > cols) append("\n（仅展示前 $cols 列）")
+    }
+
+    private fun trunc(s: String, n: Int): String {
+        val t = s.replace("\n", " ").trim()
+        return if (t.length <= n) t.padEnd(n) else t.take(n - 1) + "…"
+    }
+
+    private fun doSheetImport(
+        table: SheetImporter.Table,
+        mapping: SheetImporter.Mapping,
+        defaultBrand: String
+    ) {
+        if (!mapping.hasAnyKeyField) {
+            toast("请至少指定 货品编码 / OE码 / 车型 / 别称 中的一项")
+            return
+        }
+        val result = SheetImporter.buildItems(table, mapping, defaultBrand)
+        if (result.items.isEmpty()) {
+            toast("按当前设置没有解析出有效记录")
+            return
+        }
+
+        val existKeys = items.map { it.dedupeKey }.filter { it != "|" }.toHashSet()
+        val fresh = result.items.filter { it.dedupeKey == "|" || !existKeys.contains(it.dedupeKey) }
+        val dupes = result.items.size - fresh.size
+
+        val sample = result.items.take(3).joinToString("\n") { item ->
+            "· " + listOf(item.goodsCode, item.oeCode, item.carModel)
+                .filter { it.isNotBlank() }.joinToString(" / ")
+        }
+        val msg = buildString {
+            append("解析到 ${result.items.size} 条记录")
+            if (result.skipped > 0) append("（跳过 ${result.skipped} 行空数据）")
+            append("\n\n可新增：${fresh.size} 条")
+            if (dupes > 0) append("，与现有重复：$dupes 条")
+            append("\n\n示例：\n$sample")
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("导入确认")
+            .setMessage(msg)
+            .setPositiveButton("导入 ${fresh.size} 条") { _, _ ->
+                if (fresh.isEmpty()) { toast("没有需要新增的记录"); return@setPositiveButton }
+                items.addAll(0, fresh)
+                FilterStore.save(this, items)
+                renderList()
+                toast("已导入 ${fresh.size} 条 ✓")
+            }
+            .setNeutralButton("全部导入（含重复）") { _, _ ->
+                items.addAll(0, result.items)
+                FilterStore.save(this, items)
+                renderList()
+                toast("已导入 ${result.items.size} 条 ✓")
+            }
+            .setNegativeButton("取消", null)
+            .show()
     }
 
     // ---------- 异步与提示 ----------
