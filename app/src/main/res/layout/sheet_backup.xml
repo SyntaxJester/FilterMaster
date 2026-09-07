@@ -148,26 +148,33 @@
         android:textSize="13.5sp"
         android:textStyle="bold" />
 
-    <!-- ===== 表格导入 ===== -->
+    <!-- ===== 信息录入 ===== -->
     <TextView
         style="@style/SectionTitle"
         android:layout_marginTop="18dp"
-        android:text="📊 表格导入" />
+        android:text="📝 信息录入" />
 
-    <TextView
-        android:id="@+id/btnImportSheet"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginLeft="18dp"
-        android:layout_marginRight="18dp"
-        android:background="@drawable/bg_field"
-        android:gravity="center"
-        android:paddingTop="16dp"
-        android:paddingBottom="16dp"
-        android:text="选择 Excel / CSV 文件导入"
-        android:textColor="#33405A"
-        android:textSize="14sp"
-        android:textStyle="bold" />
+        android:orientation="horizontal"
+        android:paddingLeft="18dp"
+        android:paddingRight="18dp">
+
+        <TextView
+            android:id="@+id/btnImportSheet"
+            style="@style/ActionTile"
+            android:text="表格录入" />
+
+        <Space
+            android:layout_width="10dp"
+            android:layout_height="1dp" />
+
+        <TextView
+            android:id="@+id/btnImportOcr"
+            style="@style/ActionTile"
+            android:text="图片识别录入" />
+    </LinearLayout>
 
     <TextView
         android:layout_width="match_parent"
@@ -175,7 +182,7 @@
         android:layout_marginLeft="18dp"
         android:layout_marginRight="18dp"
         android:layout_marginTop="6dp"
-        android:text="支持 .xls / .xlsx / .csv，自动识别表头列名对应到滤芯字段，导入前可逐项调整。"
+        android:text="表格录入：支持 .xls / .xlsx / .csv，自动识别表头列名。图片识别：拍摄或选择滤芯包装/标签照片，自动提取编码、OE码、车型。"
         android:textColor="@color/text_sub"
         android:textSize="11.5sp" />
 

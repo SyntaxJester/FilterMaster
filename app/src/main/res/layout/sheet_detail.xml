@@ -12,6 +12,7 @@
         android:layout_marginTop="10dp"
         android:background="@drawable/bg_rounded_8" />
 
+    <!-- 标题栏：编码 + 品牌徽章 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -19,27 +20,61 @@
         android:orientation="horizontal"
         android:paddingLeft="18dp"
         android:paddingRight="12dp"
-        android:paddingTop="8dp"
-        android:paddingBottom="8dp">
+        android:paddingTop="10dp"
+        android:paddingBottom="12dp">
 
-        <TextView
+        <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="滤芯详情"
-            android:textColor="@color/text_main"
-            android:textSize="17sp"
-            android:textStyle="bold" />
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/tvDetailCode"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="@color/text_main"
+                android:textSize="21sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tvDetailAlias"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:textColor="@color/text_sub"
+                android:textSize="13sp"
+                android:visibility="gone" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/tvDetailBrand"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="6dp"
+            android:background="@drawable/bg_rounded_8"
+            android:paddingLeft="11dp"
+            android:paddingRight="11dp"
+            android:paddingTop="5dp"
+            android:paddingBottom="5dp"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
 
         <ImageButton
             android:id="@+id/btnDetailClose"
-            android:layout_width="30dp"
-            android:layout_height="30dp"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
             android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="关闭"
             android:src="@android:drawable/ic_menu_close_clear_cancel"
             android:tint="#8590A5" />
     </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@color/line" />
 
     <ScrollView
         android:layout_width="match_parent"
@@ -48,18 +83,191 @@
         android:scrollbars="none">
 
         <LinearLayout
-            android:id="@+id/detailContainer"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
             android:paddingLeft="18dp"
             android:paddingRight="18dp"
-            android:paddingBottom="10dp" />
+            android:paddingTop="14dp"
+            android:paddingBottom="12dp">
+
+            <!-- 照片 -->
+            <androidx.cardview.widget.CardView
+                android:id="@+id/detailImageCard"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="14dp"
+                android:visibility="gone"
+                app:cardCornerRadius="14dp"
+                app:cardElevation="0dp">
+
+                <ImageView
+                    android:id="@+id/ivDetailImage"
+                    android:layout_width="match_parent"
+                    android:layout_height="190dp"
+                    android:contentDescription="滤芯照片"
+                    android:scaleType="centerCrop" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="bottom|end"
+                    android:layout_margin="8dp"
+                    android:background="@drawable/bg_rounded_8"
+                    android:backgroundTint="#99000000"
+                    android:paddingLeft="8dp"
+                    android:paddingRight="8dp"
+                    android:paddingTop="3dp"
+                    android:paddingBottom="3dp"
+                    android:text="点击放大"
+                    android:textColor="#FFFFFF"
+                    android:textSize="10.5sp" />
+            </androidx.cardview.widget.CardView>
+
+            <!-- OE 码：独立高亮块 -->
+            <LinearLayout
+                android:id="@+id/oeBlock"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/bg_oe_block"
+                android:orientation="vertical"
+                android:paddingLeft="14dp"
+                android:paddingRight="14dp"
+                android:paddingTop="11dp"
+                android:paddingBottom="12dp"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="OE 码"
+                        android:textColor="@color/primary"
+                        android:textSize="11.5sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/btnOeCopyInline"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/bg_rounded_8"
+                        android:backgroundTint="#FFFFFF"
+                        android:paddingLeft="10dp"
+                        android:paddingRight="10dp"
+                        android:paddingTop="4dp"
+                        android:paddingBottom="4dp"
+                        android:text="复制"
+                        android:textColor="@color/primary"
+                        android:textSize="11.5sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/tvDetailOe"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="5dp"
+                    android:fontFamily="monospace"
+                    android:lineSpacingExtra="3dp"
+                    android:textColor="#16326B"
+                    android:textIsSelectable="true"
+                    android:textSize="15sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <!-- 车型 -->
+            <LinearLayout
+                android:id="@+id/carBlock"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:background="@drawable/bg_field"
+                android:orientation="vertical"
+                android:paddingLeft="14dp"
+                android:paddingRight="14dp"
+                android:paddingTop="11dp"
+                android:paddingBottom="12dp"
+                android:visibility="gone">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="适用车型"
+                    android:textColor="@color/text_sub"
+                    android:textSize="11.5sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tvDetailCar"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="5dp"
+                    android:lineSpacingExtra="3dp"
+                    android:textColor="@color/text_main"
+                    android:textSize="14.5sp" />
+            </LinearLayout>
+
+            <!-- 规格 / 位置 / 胶圈 / 盒子 四宫格 -->
+            <LinearLayout
+                android:id="@+id/gridBlock"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:orientation="vertical" />
+
+            <!-- 备注 -->
+            <LinearLayout
+                android:id="@+id/noteBlock"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:background="@drawable/bg_field"
+                android:orientation="vertical"
+                android:paddingLeft="14dp"
+                android:paddingRight="14dp"
+                android:paddingTop="11dp"
+                android:paddingBottom="12dp"
+                android:visibility="gone">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="备注"
+                    android:textColor="@color/text_sub"
+                    android:textSize="11.5sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tvDetailNote"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="5dp"
+                    android:lineSpacingExtra="3dp"
+                    android:textColor="@color/text_main"
+                    android:textSize="14sp" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/tvDetailTime"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:gravity="center"
+                android:textColor="#AAB3C5"
+                android:textSize="11sp" />
+        </LinearLayout>
     </ScrollView>
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:background="@color/card"
         android:orientation="horizontal"
         android:paddingLeft="18dp"
         android:paddingRight="18dp"
@@ -76,8 +284,7 @@
             android:text="删除"
             android:textColor="@color/danger"
             android:textSize="15sp"
-            app:cornerRadius="14dp"
-             />
+            app:cornerRadius="14dp" />
 
         <Button
             android:id="@+id/btnCopyOe"
@@ -87,7 +294,7 @@
             android:layout_weight="1"
             android:backgroundTint="#EAF0FF"
             android:stateListAnimator="@null"
-            android:text="📋 复制OE"
+            android:text="复制"
             android:textColor="@color/primary"
             android:textSize="15sp"
             app:cornerRadius="14dp" />
@@ -97,12 +304,13 @@
             android:layout_width="0dp"
             android:layout_height="46dp"
             android:layout_marginStart="10dp"
-            android:layout_weight="1"
+            android:layout_weight="1.2"
             android:backgroundTint="#2F6BFF"
             android:stateListAnimator="@null"
-            android:text="✏️ 编辑"
+            android:text="编辑"
             android:textColor="#FFFFFF"
             android:textSize="15sp"
+            android:textStyle="bold"
             app:cornerRadius="14dp" />
     </LinearLayout>
 </LinearLayout>
