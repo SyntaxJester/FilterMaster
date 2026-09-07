@@ -33,6 +33,9 @@ import androidx.core.content.FileProvider
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.bottomsheet.BottomSheetDialog
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions
 import com.filtermaster.app.sheet.SheetImporter
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
@@ -148,6 +151,21 @@ class MainActivity : AppCompatActivity() {
     private val sheetOpenLauncher =
         registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             uri?.let { startSheetImport(it) }
+        }
+
+    /** 图片识别录入：相册选图 */
+    private val ocrAlbumLauncher =
+        registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+            uri?.let { runOcrOnUri(it) }
+        }
+
+    /** 图片识别录入：拍照 */
+    private var pendingOcrFile: File? = null
+    private val ocrCameraLauncher =
+        registerForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
+            val f = pendingOcrFile
+            pendingOcrFile = null
+            if (ok && f != null && f.exists()) runOcrOnFile(f)
         }
 
     // 相机运行时权限：声明了 CAMERA 权限后，未授权直接调起系统相机会闪退
@@ -449,95 +467,163 @@ class MainActivity : AppCompatActivity() {
             dialog.setContentView(view)
             view.findViewById<ImageButton>(R.id.btnDetailClose).setOnClickListener { dialog.dismiss() }
             view.findViewById<View>(R.id.btnDelete).setOnClickListener { confirmDelete() }
-            view.findViewById<View>(R.id.btnCopyOe).setOnClickListener { copyCurrentOe() }
+            view.findViewById<View>(R.id.btnCopyOe).setOnClickListener { showCopyMenu() }
             view.findViewById<View>(R.id.btnEdit).setOnClickListener {
                 val cur = items.find { it.id == currentDetailId }
                 detailDialog?.dismiss()
                 cur?.let { openEditor(it) }
             }
             detailDialog = dialog
+            // 弹层高度固定为屏幕 88%，长内容内部滚动，按钮始终可见
+            dialog.behavior.peekHeight = (resources.displayMetrics.heightPixels * 0.88).toInt()
         }
-        val container = detailDialog!!.findViewById<LinearLayout>(R.id.detailContainer)!!
-        container.removeAllViews()
-        buildDetailContent(container, item)
+        bindDetail(detailDialog!!, item)
         detailDialog!!.show()
     }
 
-    private fun buildDetailContent(container: LinearLayout, item: FilterItem) {
-        // 图片
-        item.imagePath?.takeIf { File(it).exists() }?.let { path ->
-            val ctx = this
-            val iv = ImageView(ctx)
-            iv.adjustViewBounds = true
-            iv.scaleType = ImageView.ScaleType.FIT_CENTER
-            iv.setImageBitmap(FilterAdapter.decodeSampled(path, 900))
-            iv.setPadding(0, dp(4), 0, dp(14))
-            iv.setOnClickListener {
-                showBigImage(path)
-            }
-            container.addView(iv, LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ))
+    private fun bindDetail(dialog: BottomSheetDialog, item: FilterItem) {
+        fun <T : View> f(id: Int): T = dialog.findViewById(id)!!
+
+        f<TextView>(R.id.tvDetailCode).text = item.goodsCode.ifBlank { "未编码" }
+
+        val alias = f<TextView>(R.id.tvDetailAlias)
+        if (item.alias.isBlank()) alias.visibility = View.GONE
+        else {
+            alias.visibility = View.VISIBLE
+            alias.text = item.alias
         }
 
-        val fields = listOf(
-            "品牌" to item.brand,
-            "货品编码" to item.goodsCode,
-            "别称" to item.alias,
-            "OE码" to item.oeCode,
-            "车型" to item.carModel,
+        val brandBadge = f<TextView>(R.id.tvDetailBrand)
+        if (item.brand.isBlank()) brandBadge.visibility = View.GONE
+        else {
+            brandBadge.visibility = View.VISIBLE
+            brandBadge.text = item.brand
+            val (bg, fg) = Brands.colorsOf(item.brand)
+            brandBadge.background?.mutate()?.setTint(ContextCompat.getColor(this, bg))
+            brandBadge.setTextColor(ContextCompat.getColor(this, fg))
+        }
+
+        // 照片
+        val imgCard = f<View>(R.id.detailImageCard)
+        val imgPath = item.imagePath
+        if (!imgPath.isNullOrBlank() && File(imgPath).exists()) {
+            imgCard.visibility = View.VISIBLE
+            f<ImageView>(R.id.ivDetailImage).setImageBitmap(
+                FilterAdapter.decodeSampled(imgPath, 900)
+            )
+            imgCard.setOnClickListener { showBigImage(imgPath) }
+        } else {
+            imgCard.visibility = View.GONE
+        }
+
+        // OE 码
+        val oeBlock = f<View>(R.id.oeBlock)
+        if (item.oeCode.isBlank()) oeBlock.visibility = View.GONE
+        else {
+            oeBlock.visibility = View.VISIBLE
+            f<TextView>(R.id.tvDetailOe).text = item.oeCode
+            f<View>(R.id.btnOeCopyInline).setOnClickListener {
+                copyText(item.oeCode, "已复制 OE码 ✓")
+            }
+        }
+
+        // 车型
+        val carBlock = f<View>(R.id.carBlock)
+        if (item.carModel.isBlank()) carBlock.visibility = View.GONE
+        else {
+            carBlock.visibility = View.VISIBLE
+            f<TextView>(R.id.tvDetailCar).text = item.carModel
+        }
+
+        // 规格 / 位置 / 胶圈 / 盒子：两列网格
+        val grid = f<LinearLayout>(R.id.gridBlock)
+        grid.removeAllViews()
+        val pairs = listOf(
             "规格" to item.specification,
             "位置" to item.location,
             "胶圈" to item.rubberRing,
-            "盒子" to item.boxInfo,
-            "备注" to item.notes
+            "盒子" to item.boxInfo
         ).filter { it.second.isNotBlank() }
-
-        fields.forEachIndexed { index, (label, value) ->
+        pairs.chunked(2).forEach { pairRow ->
             val row = LinearLayout(this)
             row.orientation = LinearLayout.HORIZONTAL
-            row.setPadding(0, dp(11), 0, dp(11))
-            if (index != fields.size - 1) {
-                row.background = ContextCompat.getDrawable(this, R.drawable.bg_divider_bottom)
+            row.setPadding(0, 0, 0, dp(10))
+            pairRow.forEachIndexed { i, (label, value) ->
+                val cellLp = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                if (i == 1) cellLp.marginStart = dp(10)
+                row.addView(buildGridCell(label, value), cellLp)
             }
-
-            val k = TextView(this)
-            k.text = label
-            k.textSize = 13f
-            k.setTextColor(ContextCompat.getColor(this, R.color.text_sub))
-            row.addView(k, LinearLayout.LayoutParams(dp(80), ViewGroup.LayoutParams.WRAP_CONTENT))
-
-            val v = TextView(this)
-            v.text = value
-            v.textSize = 14.5f
-            v.setTextColor(ContextCompat.getColor(this, R.color.text_main))
-            v.setTypeface(v.typeface, android.graphics.Typeface.BOLD)
-            if (label.contains("编码") || label.contains("OE")) {
-                v.typeface = android.graphics.Typeface.MONOSPACE
+            // 单数补一个占位，保持左半宽度一致
+            if (pairRow.size == 1) {
+                val spacer = View(this)
+                row.addView(spacer, LinearLayout.LayoutParams(0, 1, 1f).also { it.marginStart = dp(10) })
             }
-            row.addView(v, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-
-            container.addView(row, LinearLayout.LayoutParams(
+            grid.addView(row, LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
             ))
         }
+        grid.visibility = if (pairs.isEmpty()) View.GONE else View.VISIBLE
 
-        if (fields.isEmpty()) {
-            val t = TextView(this)
-            t.text = "没有详细信息"
-            t.gravity = Gravity.CENTER
-            t.setPadding(0, dp(40), 0, dp(40))
-            container.addView(t)
+        // 备注
+        val noteBlock = f<View>(R.id.noteBlock)
+        if (item.notes.isBlank()) noteBlock.visibility = View.GONE
+        else {
+            noteBlock.visibility = View.VISIBLE
+            f<TextView>(R.id.tvDetailNote).text = item.notes
         }
 
-        val hint = TextView(this)
-        hint.text = "提示：点击图片可放大查看"
-        hint.textSize = 12f
-        hint.gravity = Gravity.CENTER
-        hint.setTextColor(Color.parseColor("#AAB3C5"))
-        hint.setPadding(0, dp(10), 0, 0)
-        container.addView(hint)
+        // 时间
+        val time = f<TextView>(R.id.tvDetailTime)
+        time.text = if (item.createdAt.isBlank()) ""
+        else "录入于 " + item.createdAt.replace("T", " ").take(16)
     }
+
+    private fun buildGridCell(label: String, value: String): View {
+        val box = LinearLayout(this)
+        box.orientation = LinearLayout.VERTICAL
+        box.background = ContextCompat.getDrawable(this, R.drawable.bg_field)
+        box.setPadding(dp(12), dp(10), dp(12), dp(11))
+
+        val k = TextView(this)
+        k.text = label
+        k.textSize = 11.5f
+        k.setTextColor(ContextCompat.getColor(this, R.color.text_sub))
+        k.setTypeface(android.graphics.Typeface.DEFAULT_BOLD)
+        box.addView(k)
+
+        val v = TextView(this)
+        v.text = value
+        v.textSize = 14f
+        v.setTextColor(ContextCompat.getColor(this, R.color.text_main))
+        v.setPadding(0, dp(4), 0, 0)
+        box.addView(v)
+        return box
+    }
+
+    /** 复制菜单：编码 / OE码 / 全部信息 */
+    private fun showCopyMenu() {
+        val item = items.find { it.id == currentDetailId } ?: return
+        val options = mutableListOf<Pair<String, String>>()
+        if (item.goodsCode.isNotBlank()) options.add("货品编码：${item.goodsCode}" to item.goodsCode)
+        if (item.oeCode.isNotBlank()) options.add("OE码：${item.oeCode}" to item.oeCode)
+        val full = listOf(
+            "品牌" to item.brand, "货品编码" to item.goodsCode, "别称" to item.alias,
+            "OE码" to item.oeCode, "车型" to item.carModel, "规格" to item.specification,
+            "位置" to item.location, "胶圈" to item.rubberRing, "盒子" to item.boxInfo,
+            "备注" to item.notes
+        ).filter { it.second.isNotBlank() }.joinToString("\n") { "${it.first}：${it.second}" }
+        options.add("全部信息" to full)
+
+        if (options.size == 1) { copyText(full, "已复制全部信息 ✓"); return }
+        AlertDialog.Builder(this)
+            .setTitle("复制哪一项？")
+            .setItems(options.map { it.first }.toTypedArray()) { _, which ->
+                copyText(options[which].second, "已复制 ✓")
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
 
     private fun showBigImage(path: String) {
         val dialog = AlertDialog.Builder(this).create()
@@ -570,13 +656,6 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun copyCurrentOe() {
-        val item = items.find { it.id == currentDetailId } ?: return
-        if (item.oeCode.isBlank()) return
-        val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        cm.setPrimaryClip(ClipData.newPlainText("OE", item.oeCode))
-        toast("已复制 OE码 ✓")
-    }
 
     // ---------- 相机权限 ----------
     private fun ensureCameraPerm(action: () -> Unit) {
@@ -709,6 +788,9 @@ class MainActivity : AppCompatActivity() {
         }
         view.findViewById<View>(R.id.btnImportSheet).setOnClickListener {
             dialog.dismiss(); pickSheetFile()
+        }
+        view.findViewById<View>(R.id.btnImportOcr).setOnClickListener {
+            dialog.dismiss(); startOcrEntry()
         }
         dialog.show()
     }
@@ -1145,6 +1227,188 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    // ==================== 图片识别录入（OCR） ====================
+    private fun startOcrEntry() {
+        AlertDialog.Builder(this)
+            .setTitle("图片识别录入")
+            .setItems(arrayOf("📷 拍照识别", "🖼️ 从相册选择")) { _, which ->
+                if (which == 0) ensureCameraPerm { launchOcrCamera() }
+                else ocrAlbumLauncher.launch("image/*")
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun launchOcrCamera() {
+        try {
+            val dir = File(cacheDir, "photos")
+            if (!dir.exists()) dir.mkdirs()
+            val f = File(dir, "ocr_${System.currentTimeMillis()}.jpg")
+            pendingOcrFile = f
+            val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", f)
+            ocrCameraLauncher.launch(uri)
+        } catch (e: Exception) {
+            toast("无法启动相机：${e.message}")
+        }
+    }
+
+    private fun runOcrOnUri(uri: Uri) {
+        try {
+            val f = contentResolver.openInputStream(uri)?.use {
+                BackupUtil.cacheFrom(this, it, "ocr_pick.jpg")
+            } ?: run { toast("无法读取所选图片"); return }
+            runOcrOnFile(f)
+        } catch (e: Exception) {
+            toast("读取图片失败：${e.message}")
+        }
+    }
+
+    private fun runOcrOnFile(file: File) {
+        val bmp = FilterAdapter.decodeSampled(file.absolutePath, 1600)
+        if (bmp == null) { toast("图片无法解析"); return }
+
+        val progress = showProgress("正在识别图片文字…")
+        val recognizer = TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build())
+        recognizer.process(InputImage.fromBitmap(bmp, 0))
+            .addOnSuccessListener { visionText ->
+                progress.dismiss()
+                recognizer.close()
+                val raw = visionText.text
+                if (raw.isBlank()) {
+                    toast("没有识别到文字，换个角度或补光后再拍")
+                    return@addOnSuccessListener
+                }
+                showOcrResult(OcrExtractor.extract(raw), raw, file)
+            }
+            .addOnFailureListener { e ->
+                progress.dismiss()
+                recognizer.close()
+                showError("识别失败", e)
+            }
+    }
+
+    /** 识别结果确认页：可改字段、选品牌、查看原始文本 */
+    private fun showOcrResult(result: OcrExtractor.Result, rawText: String, image: File) {
+        val view = layoutInflater.inflate(R.layout.dialog_ocr_result, null)
+        val hint = view.findViewById<TextView>(R.id.tvOcrHint)
+        val brandRow = view.findViewById<TextView>(R.id.tvOcrBrand)
+        val etGoods = view.findViewById<EditText>(R.id.etOcrGoods)
+        val etOe = view.findViewById<EditText>(R.id.etOcrOe)
+        val etCar = view.findViewById<EditText>(R.id.etOcrCar)
+        val etSpec = view.findViewById<EditText>(R.id.etOcrSpec)
+
+        val filled = listOf(result.goodsCode, result.oeText, result.carModel, result.specification)
+            .count { it.isNotBlank() }
+        hint.text = "共识别到 ${result.rawLines.size} 行文字，自动填充了 $filled 个字段。\n" +
+                "请核对后保存，识别有误可直接修改。"
+
+        etGoods.setText(result.goodsCode)
+        etOe.setText(result.oeText)
+        etCar.setText(result.carModel)
+        etSpec.setText(result.specification)
+
+        var brand = result.brand
+        fun refreshBrand() {
+            brandRow.text = if (brand.isBlank()) "品牌：（点击选择）" else "品牌：$brand"
+        }
+        refreshBrand()
+        brandRow.setOnClickListener {
+            val options = arrayOf("（不设置）") + Brands.ALL.toTypedArray()
+            AlertDialog.Builder(this)
+                .setTitle("选择品牌")
+                .setItems(options) { _, which ->
+                    brand = if (which == 0) "" else Brands.ALL[which - 1]
+                    refreshBrand()
+                }
+                .setNegativeButton("取消", null)
+                .show()
+        }
+
+        view.findViewById<View>(R.id.btnOcrRaw).setOnClickListener {
+            AlertDialog.Builder(this)
+                .setTitle("识别到的全部文字")
+                .setMessage(rawText)
+                .setPositiveButton("关闭", null)
+                .setNeutralButton("复制") { _, _ -> copyText(rawText, "已复制识别文字") }
+                .show()
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("确认识别结果")
+            .setView(view)
+            .setPositiveButton("保存记录") { _, _ ->
+                saveOcrItem(
+                    brand = brand,
+                    goods = etGoods.text.toString().trim(),
+                    oe = etOe.text.toString().trim(),
+                    car = etCar.text.toString().trim(),
+                    spec = etSpec.text.toString().trim(),
+                    image = image
+                )
+            }
+            .setNeutralButton("去完整表单") { _, _ ->
+                // 带着识别结果打开编辑弹层，补充胶圈/盒子/位置等
+                val draft = FilterItem(
+                    brand = brand,
+                    goodsCode = etGoods.text.toString().trim(),
+                    oeCode = etOe.text.toString().trim(),
+                    carModel = etCar.text.toString().trim(),
+                    specification = etSpec.text.toString().trim()
+                )
+                openEditor(draft)
+                currentImagePath = persistOcrImage(image)
+                refreshPreview()
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    /** 把识别用的临时图片转存为记录附图 */
+    private fun persistOcrImage(src: File): String? = runCatching {
+        val bmp = FilterAdapter.decodeSampled(src.absolutePath, 1400) ?: return null
+        val dest = FilterStore.newImageFile(this)
+        FileOutputStream(dest).use { bmp.compress(Bitmap.CompressFormat.JPEG, 72, it) }
+        dest.absolutePath
+    }.getOrNull()
+
+    private fun saveOcrItem(
+        brand: String, goods: String, oe: String, car: String, spec: String, image: File
+    ) {
+        if (goods.isEmpty() && oe.isEmpty() && car.isEmpty()) {
+            toast("请至少填写 编码 / OE码 / 车型")
+            return
+        }
+        val dup = items.firstOrNull {
+            (goods.isNotEmpty() && it.goodsCode == goods) ||
+                    (oe.isNotEmpty() && it.oeCode == oe)
+        }
+        val save = {
+            items.add(0, FilterItem(
+                id = System.currentTimeMillis(),
+                brand = brand,
+                goodsCode = goods,
+                oeCode = oe,
+                carModel = car,
+                specification = spec,
+                imagePath = persistOcrImage(image),
+                createdAt = java.text.SimpleDateFormat(
+                    "yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US
+                ).format(java.util.Date())
+            ))
+            FilterStore.save(this, items)
+            renderList()
+            toast("已录入 ✓")
+        }
+        if (dup != null) {
+            AlertDialog.Builder(this)
+                .setTitle("可能重复")
+                .setMessage("已存在编码「${dup.goodsCode}」的记录，仍要新增吗？")
+                .setPositiveButton("仍然新增") { _, _ -> save() }
+                .setNegativeButton("取消", null)
+                .show()
+        } else save()
+    }
+
     // ---------- 异步与提示 ----------
     private fun <T> runAsync(work: () -> T, done: (T) -> Unit, fail: (Throwable) -> Unit) {
         Thread {
@@ -1179,6 +1443,12 @@ class MainActivity : AppCompatActivity() {
     // ---------- 工具 ----------
     private fun toast(msg: String) =
         Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+
+    private fun copyText(text: String, msg: String) {
+        val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        cm.setPrimaryClip(ClipData.newPlainText("copied", text))
+        toast(msg)
+    }
 
     private fun dp(value: Int): Int =
         (value * resources.displayMetrics.density + 0.5f).toInt()
