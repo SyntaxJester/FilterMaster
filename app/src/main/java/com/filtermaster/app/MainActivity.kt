@@ -915,7 +915,6 @@ class MainActivity : AppCompatActivity() {
         runAsync(
             work = {
                 val client = CloudPrefs.clientOf(cfg)
-                client.ensureDir(cfg.dir)
                 client.testConnection(cfg.dir)
                 client.listBackups(cfg.dir).size
             },
@@ -942,6 +941,7 @@ class MainActivity : AppCompatActivity() {
             work = {
                 val zip = BackupUtil.createBackup(this, snapshot)
                 val client = CloudPrefs.clientOf(cfg)
+                client.ensureDir(cfg.dir)
                 client.upload(cfg.dir, zip)
                 zip.name
             },

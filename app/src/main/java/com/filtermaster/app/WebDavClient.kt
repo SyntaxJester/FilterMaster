@@ -75,15 +75,60 @@ class WebDavClient(
         else -> "服务器返回 $code"
     }
 
-    /** 连通性 + 凭据校验 */
+    /** 目录是否已存在（PROPFIND Depth:0） */
+    private fun dirExists(dir: String): Boolean {
+        val conn = open(dirUrl(dir), "PROPFIND")
+        conn.setRequestProperty("Depth", "0")
+        return try {
+            val code = conn.responseCode
+            code in 200..299 || code == 301 || code == 302
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    /**
+     * 连通性 + 凭据校验。目录不存在时自动逐级创建。
+     * 先探测后创建：避免对已存在的目录发 MKCOL 被服务器拒绝（403）。
+     */
     fun testConnection(dir: String) {
+        // 逐级：已存在 → 跳过；不存在 → MKCOL 创建
+        val parts = dir.trim('/').split('/').filter { it.isNotBlank() }
+        var cur = ""
+        parts.forEach { seg ->
+            cur = if (cur.isEmpty()) seg else "$cur/$seg"
+            if (dirExists(cur)) return@forEach
+            val conn = open(dirUrl(cur), "MKCOL")
+            try {
+                val code = conn.responseCode
+                when {
+                    code in 200..299 || code == 405 || code == 301 || code == 302 -> Unit // 已由他人创建/已存在
+                    code == 401 -> throw DavException(failMessage(code))
+                    code == 403 -> throw DavException(
+                        "无法在云端创建文件夹「$seg」（$code 无权访问）。" +
+                                "请在坚果云网页端「我的坚果云」目录下手动新建同名文件夹后重试。"
+                    )
+                    else -> throw DavException("创建文件夹失败：${failMessage(code)}")
+                }
+            } finally {
+                conn.disconnect()
+            }
+        }
+        // 最终以 PROPFIND 校验凭据与最终路径可读
         val conn = open(dirUrl(dir), "PROPFIND")
         conn.setRequestProperty("Depth", "0")
         try {
             val code = conn.responseCode
             when {
                 code in 200..299 -> return
-                code == 404 -> throw DavException("目录不存在，可先创建：${dir.ifBlank { "/" }}")
+                code == 401 -> throw DavException(failMessage(code))
+                code == 403 -> throw DavException(
+                    failMessage(code) + "。请确认「云端文件夹」名称与网页端完全一致（含大小写），" +
+                            "或该文件夹不是他人共享的只读目录。"
+                )
+                code == 404 -> throw DavException(
+                    "路径不存在。请先在坚果云网页端手动创建「${dir.ifBlank { "/" }}」文件夹（注意大小写一致）。"
+                )
                 else -> throw DavException(failMessage(code))
             }
         } finally {
@@ -91,19 +136,18 @@ class WebDavClient(
         }
     }
 
-    /** 创建目录（已存在时静默通过） */
+    /** 创建目录（先探测，已存在则跳过；逐级创建避免 409） */
     fun ensureDir(dir: String) {
         if (dir.trim('/').isEmpty()) return
-        // 逐级创建，避免 409
         val parts = dir.trim('/').split('/').filter { it.isNotBlank() }
         var cur = ""
         parts.forEach { seg ->
             cur = if (cur.isEmpty()) seg else "$cur/$seg"
+            if (dirExists(cur)) return@forEach
             val conn = open(dirUrl(cur), "MKCOL")
             try {
                 val code = conn.responseCode
-                // 201 创建成功；405/301 已存在
-                if (code !in 200..299 && code != 405 && code != 301) {
+                if (code !in 200..299 && code != 405 && code != 301 && code != 302) {
                     if (code == 401 || code == 403) throw DavException(failMessage(code))
                 }
             } finally {
