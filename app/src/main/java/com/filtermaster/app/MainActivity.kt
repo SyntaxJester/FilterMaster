@@ -288,7 +288,7 @@ class MainActivity : AppCompatActivity() {
      * 忽略大小写；中文与符号排在英文/数字之后。
      */
     private fun sortItems() {
-        items.sortWith { a, b -> compareByKey(a) to compareByKey(b) }
+        items.sortWith { a, b -> compareByKey(a).compareTo(compareByKey(b)) }
     }
 
     /** 取记录的可读内容作为排序依据：优先 别称/编码 → 品牌 → OE码 → 车型 */
