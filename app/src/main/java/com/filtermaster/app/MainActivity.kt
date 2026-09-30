@@ -187,6 +187,7 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         items = FilterStore.load(this)
+        sortItems()   // 录入后默认按内容排序：英文 A‑Z / 数字 0‑9
 
         bindViews()
         setupFilterBar()
@@ -282,8 +283,26 @@ class MainActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.btnBackup).setOnClickListener { showBackupSheet() }
     }
 
-    // ---------- 列表渲染 ----------
+    /**
+     * 默认排序：按记录的可读内容，英文 A→Z 优先、数字 0→9 其次，
+     * 忽略大小写；中文与符号排在英文/数字之后。
+     */
+    private fun sortItems() {
+        items.sortWith { a, b -> compareByKey(a) to compareByKey(b) }
+    }
+
+    /** 取记录的可读内容作为排序依据：优先 别称/编码 → 品牌 → OE码 → 车型 */
+    private fun compareByKey(item: FilterItem): String {
+        return listOf(item.alias, item.goodsCode, item.brand, item.oeCode, item.carModel)
+            .firstOrNull { it.isNotBlank() }
+            ?.trim()
+            ?.uppercase()
+            ?: "ZZZZ"  // 空内容排到最末
+    }
+
+    /** 列表渲染 */
     private fun renderList() {
+        sortItems()
         displayed.clear()
         displayed.addAll(items.asSequence()
             .filter { currentType == "all" || it.brand == currentType }
@@ -452,6 +471,7 @@ class MainActivity : AppCompatActivity() {
                 ).format(java.util.Date())
             ))
         }
+        sortItems()
         FilterStore.save(this, items)
         editDialog?.dismiss()
         renderList()
