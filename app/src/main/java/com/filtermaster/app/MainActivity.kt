@@ -284,20 +284,25 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * 默认排序：按记录的可读内容，英文 A→Z 优先、数字 0→9 其次，
+     * 默认排序：按记录的可读内容，英文 A→Z、数字按数值大小 0→9，
      * 忽略大小写；中文与符号排在英文/数字之后。
      */
     private fun sortItems() {
-        items.sortWith { a, b -> compareByKey(a).compareTo(compareByKey(b)) }
+        items.sortWith(compareBy { compareByKeyNatural(it) })
     }
 
-    /** 取记录的可读内容作为排序依据：优先 别称/编码 → 品牌 → OE码 → 车型 */
-    private fun compareByKey(item: FilterItem): String {
-        return listOf(item.alias, item.goodsCode, item.brand, item.oeCode, item.carModel)
+    /** 自然语言比较键（把连续数字按数值比较） */
+    private fun compareByKeyNatural(item: FilterItem): List<Any> {
+        val key = listOf(item.alias, item.goodsCode, item.brand, item.oeCode, item.carModel)
             .firstOrNull { it.isNotBlank() }
             ?.trim()
-            ?.uppercase()
-            ?: "ZZZZ"  // 空内容排到最末
+            ?: return listOf("ZZZZ")
+        val parts = mutableListOf<Any>()
+        val m = Regex("(\\d+|\\D+)").findAll(key.uppercase()).forEach { m ->
+            val s = m.value
+            parts.add(if (s.all { it.isDigit() }) s.toIntOrNull() ?: s else s)
+        }
+        return parts
     }
 
     /** 列表渲染 */
