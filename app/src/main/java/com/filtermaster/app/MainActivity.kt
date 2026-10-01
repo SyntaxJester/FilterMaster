@@ -284,42 +284,29 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * 默认排序：按记录的可读内容，英文 A→Z、数字按数值大小 0→9，
-     * 忽略大小写；中文与符号排在英文/数字之后。
+     * 默认排序：忽略编码前面的英文字母，从字母后的第一位数字起，
+     * 按数字 0→9 从小到大排序。只认「货品编码」，编码为空才退回 OE 码。
      */
     private fun sortItems() {
-        items.sortWith { a, b -> compareNatural(compareKey(a), compareKey(b)) }
+        items.sortWith(
+            compareBy<FilterItem> { numericKey(it) }
+                .thenBy { sortSource(it) }   // 数字相同时按完整编码兜底
+        )
     }
 
-    private fun compareKey(item: FilterItem): String {
-        return listOf(item.alias, item.goodsCode, item.brand, item.oeCode, item.carModel)
-            .firstOrNull { it.isNotBlank() }
-            ?.trim()
-            ?.uppercase()
-            ?: "ZZZZ"
-    }
+    /** 排序取值来源：优先货品编码，其次 OE 码 */
+    private fun sortSource(item: FilterItem): String = when {
+        item.goodsCode.isNotBlank() -> item.goodsCode
+        item.oeCode.isNotBlank()    -> item.oeCode
+        else                        -> ""
+    }.uppercase()
 
-    /** 自然语言比较：把连续数字按整数比较 */
-    private fun compareNatural(a: String, b: String): Int {
-        val re = Regex("(\\d+|\\D+)")
-        val pa = re.findAll(a).map { it.value }.iterator()
-        val pb = re.findAll(b).map { it.value }.iterator()
-        while (pa.hasNext() && pb.hasNext()) {
-            val sa = pa.next()
-            val sb = pb.next()
-            val ca = sa.all { it.isDigit() }
-            val cb = sb.all { it.isDigit() }
-            if (ca && cb) {
-                val cmp = (sa.toLongOrNull() ?: 0L).compareTo(sb.toLongOrNull() ?: 0L)
-                if (cmp != 0) return cmp
-            } else if (ca) return -1  // 数字串 < 字母串
-            else if (cb) return 1
-            else {
-                val cmp = sa.compareTo(sb)
-                if (cmp != 0) return cmp
-            }
-        }
-        return a.length.compareTo(b.length)
+    /** 去掉开头的英文/符号前缀，取紧随其后的那串数字作为数值键；无数字排最后 */
+    private fun numericKey(item: FilterItem): Long {
+        val digits = sortSource(item)
+            .dropWhile { !it.isDigit() }   // 跳过 JZ / JX / SKU- 等前缀
+            .takeWhile { it.isDigit() }    // 取第一段连续数字
+        return digits.toLongOrNull() ?: Long.MAX_VALUE
     }
 
     /** 列表渲染 */
