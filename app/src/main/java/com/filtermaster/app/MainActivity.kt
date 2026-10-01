@@ -288,21 +288,38 @@ class MainActivity : AppCompatActivity() {
      * 忽略大小写；中文与符号排在英文/数字之后。
      */
     private fun sortItems() {
-        items.sortWith(compareBy { compareByKeyNatural(it) })
+        items.sortWith { a, b -> compareNatural(compareKey(a), compareKey(b)) }
     }
 
-    /** 自然语言比较键（把连续数字按数值比较） */
-    private fun compareByKeyNatural(item: FilterItem): List<Any> {
-        val key = listOf(item.alias, item.goodsCode, item.brand, item.oeCode, item.carModel)
+    private fun compareKey(item: FilterItem): String {
+        return listOf(item.alias, item.goodsCode, item.brand, item.oeCode, item.carModel)
             .firstOrNull { it.isNotBlank() }
             ?.trim()
-            ?: return listOf("ZZZZ")
-        val parts = mutableListOf<Any>()
-        val m = Regex("(\\d+|\\D+)").findAll(key.uppercase()).forEach { m ->
-            val s = m.value
-            parts.add(if (s.all { it.isDigit() }) s.toIntOrNull() ?: s else s)
+            ?.uppercase()
+            ?: "ZZZZ"
+    }
+
+    /** 自然语言比较：把连续数字按整数比较 */
+    private fun compareNatural(a: String, b: String): Int {
+        val re = Regex("(\\d+|\\D+)")
+        val pa = re.findAll(a).map { it.value }.iterator()
+        val pb = re.findAll(b).map { it.value }.iterator()
+        while (pa.hasNext() && pb.hasNext()) {
+            val sa = pa.next()
+            val sb = pb.next()
+            val ca = sa.all { it.isDigit() }
+            val cb = sb.all { it.isDigit() }
+            if (ca && cb) {
+                val cmp = sa.toLongOrNull()?.compareTo(sb.toLongOrNull() ?: 0)
+                if (cmp != 0) return cmp
+            } else if (ca) return -1  // 数字串 < 字母串
+            else if (cb) return 1
+            else {
+                val cmp = sa.compareTo(sb)
+                if (cmp != 0) return cmp
+            }
         }
-        return parts
+        return a.length.compareTo(b.length)
     }
 
     /** 列表渲染 */
