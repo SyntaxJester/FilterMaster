@@ -310,7 +310,7 @@ class MainActivity : AppCompatActivity() {
             val ca = sa.all { it.isDigit() }
             val cb = sb.all { it.isDigit() }
             if (ca && cb) {
-                val cmp = sa.toLongOrNull()?.compareTo(sb.toLongOrNull() ?: 0)
+                val cmp = (sa.toLongOrNull() ?: 0L).compareTo(sb.toLongOrNull() ?: 0L)
                 if (cmp != 0) return cmp
             } else if (ca) return -1  // 数字串 < 字母串
             else if (cb) return 1
