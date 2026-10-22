@@ -11,8 +11,8 @@ android {
         applicationId = "com.filtermaster.app"
         minSdk = 24
         targetSdk = 34
-        versionCode = 2
-        versionName = "1.6.1"
+        versionCode = 6
+        versionName = "1.7.0"
     }
 
     buildTypes {
@@ -41,4 +41,6 @@ dependencies {
     implementation("com.google.android.flexbox:flexbox:3.0.0")
     // 离线中文文字识别（含模型，无需联网）
     implementation("com.google.mlkit:text-recognition-chinese:16.0.1")
+    // WebDAV：OkHttp 原生支持 PROPFIND / MKCOL 等任意方法
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 }

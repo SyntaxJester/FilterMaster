@@ -1,24 +1,29 @@
 package com.filtermaster.app
 
 import android.util.Base64
+import okhttp3.Credentials
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.asRequestBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.xmlpull.v1.XmlPullParser
 import org.xmlpull.v1.XmlPullParserFactory
 import java.io.ByteArrayInputStream
 import java.io.File
-import java.io.FileInputStream
-import java.io.FileOutputStream
-import java.net.HttpURLConnection
-import java.net.URL
 import java.net.URLDecoder
 import java.net.URLEncoder
+import java.util.concurrent.TimeUnit
 
 /**
- * 极简 WebDAV 客户端（坚果云 / 其它标准 WebDAV 服务通用）。
+ * 极简 WebDAV 客户端（坚果云 / 其它标准 WebDAV 服务通用），基于 OkHttp。
  *
- * 坚果云配置方式：网页版 → 账户信息 → 安全选项 → 添加应用 → 生成「应用密码」。
- * 服务器地址固定 https://dav.jianguoyun.com/dav/，账户填注册邮箱，密码填应用密码（不是登录密码）。
+ * 坚果云：网页版 → 账户信息 → 安全选项 → 添加应用 → 生成「应用密码」。
+ * 地址 https://dav.jianguoyun.com/dav/，账户填注册邮箱，密码填应用密码（不是登录密码）。
  *
- * 只用 HttpURLConnection，无第三方依赖。所有方法都是阻塞的，调用方需放到子线程。
+ * 为何用 OkHttp：HttpURLConnection 不支持 PROPFIND/MKCOL，
+ * 靠反射改私有 method 字段在 Android 上无效（异常被吞，实际发出 GET），
+ * 坚果云对目录 GET 返回 403，于是「已存在的目录」也会被判定为无权访问。
  */
 class WebDavClient(
     private val baseUrl: String,
@@ -28,189 +33,191 @@ class WebDavClient(
 
     class DavException(message: String) : Exception(message)
 
-    data class RemoteFile(val name: String, val size: Long, val lastModified: String)
+    data class RemoteFile(
+        val name: String,
+        val size: Long,
+        val lastModified: String,
+        val isDir: Boolean = false
+    )
 
-    private val auth: String
-        get() = "Basic " + Base64.encodeToString(
-            "$user:$password".toByteArray(Charsets.UTF_8), Base64.NO_WRAP
-        )
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
+        .writeTimeout(60, TimeUnit.SECONDS)
+        .followRedirects(true)
+        .build()
+
+    private val authHeader: String =
+        Credentials.basic(user, password, Charsets.UTF_8)
 
     /** 目录 URL，保证以 / 结尾 */
     private fun dirUrl(dir: String): String {
         val b = baseUrl.trimEnd('/')
         val d = dir.trim('/')
-        return if (d.isEmpty()) "$b/" else "$b/$d/"
+        val encoded = if (d.isEmpty()) "" else "/" + d.split('/')
+            .filter { it.isNotBlank() }
+            .joinToString("/") { URLEncoder.encode(it, "UTF-8").replace("+", "%20") }
+        return "$b$encoded/"
     }
 
     private fun fileUrl(dir: String, name: String): String =
         dirUrl(dir) + URLEncoder.encode(name, "UTF-8").replace("+", "%20")
 
-    private fun open(url: String, method: String): HttpURLConnection {
-        val conn = URL(url).openConnection() as HttpURLConnection
-        // PROPFIND / MKCOL 不是标准枚举方法，需要反射放行
-        try {
-            conn.requestMethod = method
-        } catch (e: java.net.ProtocolException) {
-            runCatching {
-                val f = HttpURLConnection::class.java.getDeclaredField("method")
-                f.isAccessible = true
-                f.set(conn, method)
-            }
-        }
-        conn.setRequestProperty("Authorization", auth)
-        conn.setRequestProperty("User-Agent", "FilterMaster/1.4 (Android)")
-        conn.connectTimeout = 15000
-        conn.readTimeout = 60000
-        conn.instanceFollowRedirects = true
-        return conn
-    }
-
     private fun failMessage(code: Int): String = when (code) {
         401 -> "账号或应用密码不正确（坚果云需使用「应用密码」，不是登录密码）"
         403 -> "无权访问该路径"
         404 -> "路径不存在"
+        405 -> "服务器不支持该操作"
         409 -> "上级目录不存在"
         423 -> "文件被锁定，请稍后重试"
         507 -> "云端空间不足"
         else -> "服务器返回 $code"
     }
 
-    /** 目录是否已存在（PROPFIND Depth:0） */
-    private fun dirExists(dir: String): Boolean {
-        val conn = open(dirUrl(dir), "PROPFIND")
-        conn.setRequestProperty("Depth", "0")
-        return try {
-            val code = conn.responseCode
-            code in 200..299 || code == 301 || code == 302
-        } finally {
-            conn.disconnect()
+    private val propfindBody =
+        """<?xml version="1.0" encoding="utf-8"?>
+<d:propfind xmlns:d="DAV:"><d:prop>
+<d:displayname/><d:getcontentlength/><d:getlastmodified/><d:resourcetype/>
+</d:prop></d:propfind>"""
+
+    /** 发送 PROPFIND，返回 (响应码, 响应体) */
+    private fun propfind(url: String, depth: String): Pair<Int, String> {
+        val req = Request.Builder()
+            .url(url)
+            .method("PROPFIND", propfindBody.toRequestBody("application/xml; charset=utf-8".toMediaType()))
+            .header("Depth", depth)
+            .header("Authorization", authHeader)
+            .header("User-Agent", "FilterMaster/1.7 (Android)")
+            .build()
+        client.newCall(req).execute().use { resp ->
+            val body = resp.body?.string().orEmpty()
+            return resp.code to body
         }
     }
 
-    /**
-     * 连通性 + 凭据校验。目录不存在时自动逐级创建。
-     * 先探测后创建：避免对已存在的目录发 MKCOL 被服务器拒绝（403）。
-     */
-    fun testConnection(dir: String) {
-        // 逐级：已存在 → 跳过；不存在 → MKCOL 创建
-        val parts = dir.trim('/').split('/').filter { it.isNotBlank() }
-        var cur = ""
-        parts.forEach { seg ->
-            cur = if (cur.isEmpty()) seg else "$cur/$seg"
-            if (dirExists(cur)) return@forEach
-            val conn = open(dirUrl(cur), "MKCOL")
-            try {
-                val code = conn.responseCode
-                when {
-                    code in 200..299 || code == 405 || code == 301 || code == 302 -> Unit // 已由他人创建/已存在
-                    code == 401 -> throw DavException(failMessage(code))
-                    code == 403 -> throw DavException(
-                        "无法在云端创建文件夹「$seg」（$code 无权访问）。" +
-                                "请在坚果云网页端「我的坚果云」目录下手动新建同名文件夹后重试。"
-                    )
-                    else -> throw DavException("创建文件夹失败：${failMessage(code)}")
-                }
-            } finally {
-                conn.disconnect()
-            }
-        }
-        // 最终以 PROPFIND 校验凭据与最终路径可读
-        val conn = open(dirUrl(dir), "PROPFIND")
-        conn.setRequestProperty("Depth", "0")
-        try {
-            val code = conn.responseCode
-            when {
-                code in 200..299 -> return
-                code == 401 -> throw DavException(failMessage(code))
-                code == 403 -> throw DavException(
-                    failMessage(code) + "。请确认「云端文件夹」名称与网页端完全一致（含大小写），" +
-                            "或该文件夹不是他人共享的只读目录。"
-                )
-                code == 404 -> throw DavException(
-                    "路径不存在。请先在坚果云网页端手动创建「${dir.ifBlank { "/" }}」文件夹（注意大小写一致）。"
-                )
-                else -> throw DavException(failMessage(code))
-            }
-        } finally {
-            conn.disconnect()
-        }
+    /** 目录是否存在（Depth:0） */
+    fun dirExists(dir: String): Boolean {
+        val (code, _) = propfind(dirUrl(dir), "0")
+        return code in 200..299 || code == 301 || code == 302
     }
 
-    /** 创建目录（先探测，已存在则跳过；逐级创建避免 409） */
+    /** 列出某个目录下的条目（Depth:1），包含子文件夹 */
+    fun listDir(dir: String): List<RemoteFile> {
+        val (code, xml) = propfind(dirUrl(dir), "1")
+        if (code !in 200..299) throw DavException(failMessage(code))
+        val entries = parseList(xml)
+        // 第一个通常是目录自身，按名称剔除
+        val self = dir.trim('/').substringAfterLast('/')
+        return entries.filter { it.name.isNotBlank() && !(it.isDir && it.name == self) }
+            .sortedWith(compareByDescending<RemoteFile> { it.isDir }.thenBy { it.name.lowercase() })
+    }
+
+    /** 列出可用的备份 zip，新的在前 */
+    fun listBackups(dir: String): List<RemoteFile> =
+        listDir(dir).filter { !it.isDir && it.name.endsWith(".zip", true) }
+            .sortedByDescending { it.name }
+
+    /** 建目录（逐级、先探测后创建，已存在不算错） */
     fun ensureDir(dir: String) {
         if (dir.trim('/').isEmpty()) return
-        val parts = dir.trim('/').split('/').filter { it.isNotBlank() }
         var cur = ""
-        parts.forEach { seg ->
+        dir.trim('/').split('/').filter { it.isNotBlank() }.forEach { seg ->
             cur = if (cur.isEmpty()) seg else "$cur/$seg"
             if (dirExists(cur)) return@forEach
-            val conn = open(dirUrl(cur), "MKCOL")
-            try {
-                val code = conn.responseCode
-                if (code !in 200..299 && code != 405 && code != 301 && code != 302) {
-                    if (code == 401 || code == 403) throw DavException(failMessage(code))
+            val req = Request.Builder()
+                .url(dirUrl(cur))
+                .method("MKCOL", null)
+                .header("Authorization", authHeader)
+                .header("User-Agent", "FilterMaster/1.7 (Android)")
+                .build()
+            client.newCall(req).execute().use { resp ->
+                when {
+                    resp.code in 200..299 -> Unit
+                    resp.code == 405 || resp.code == 301 || resp.code == 302 -> Unit // 已存在
+                    resp.code == 401 -> throw DavException(failMessage(401))
+                    resp.code == 403 -> throw DavException(
+                        "无法在云端创建文件夹「$seg」（403 无权访问）。\n\n" +
+                            "请确认：\n" +
+                            "1. 地址为 https://dav.jianguoyun.com/dav/\n" +
+                            "2. 密码是「应用密码」而非登录密码\n" +
+                            "3. 或在「浏览云端」里直接选择一个已存在的文件夹"
+                    )
+                    else -> throw DavException("创建文件夹失败：${failMessage(resp.code)}")
                 }
-            } finally {
-                conn.disconnect()
             }
+        }
+    }
+
+    /** 连通性 + 凭据校验 */
+    fun testConnection(dir: String) {
+        // 先只验证根目录凭据
+        val (rootCode, _) = propfind(dirUrl(""), "0")
+        when {
+            rootCode in 200..299 -> Unit
+            rootCode == 401 -> throw DavException(failMessage(401))
+            rootCode == 403 -> throw DavException(
+                "凭据被拒绝（403）。请确认使用坚果云「应用密码」，" +
+                    "并在 账户信息 → 安全选项 → 添加应用 中生成。"
+            )
+            else -> throw DavException("连接失败：${failMessage(rootCode)}")
+        }
+
+        // 再校验目标目录，不存在则创建
+        ensureDir(dir)
+
+        val (code, _) = propfind(dirUrl(dir), "0")
+        when {
+            code in 200..299 -> return
+            code == 404 -> throw DavException("目录「${dir}」不存在，且自动创建失败。")
+            else -> throw DavException(failMessage(code))
         }
     }
 
     fun upload(dir: String, file: File, remoteName: String = file.name) {
         ensureDir(dir)
-        val conn = open(fileUrl(dir, remoteName), "PUT")
-        conn.doOutput = true
-        conn.setRequestProperty("Content-Type", "application/zip")
-        conn.setFixedLengthStreamingMode(file.length())
-        try {
-            conn.outputStream.use { out ->
-                FileInputStream(file).use { it.copyTo(out) }
-            }
-            val code = conn.responseCode
-            if (code !in 200..299) throw DavException(failMessage(code))
-        } finally {
-            conn.disconnect()
-        }
-    }
-
-    /** 列出目录下的 .zip 备份，按名称倒序（新的在前） */
-    fun listBackups(dir: String): List<RemoteFile> {
-        val conn = open(dirUrl(dir), "PROPFIND")
-        conn.setRequestProperty("Depth", "1")
-        conn.setRequestProperty("Content-Type", "application/xml")
-        conn.doOutput = true
-        val body = """<?xml version="1.0" encoding="utf-8"?>
-            <d:propfind xmlns:d="DAV:"><d:prop>
-            <d:displayname/><d:getcontentlength/><d:getlastmodified/><d:resourcetype/>
-            </d:prop></d:propfind>""".trimIndent()
-        try {
-            conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
-            val code = conn.responseCode
-            if (code !in 200..299) throw DavException(failMessage(code))
-            val xml = conn.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
-            return parseList(xml).filter { it.name.endsWith(".zip", true) }
-                .sortedByDescending { it.name }
-        } finally {
-            conn.disconnect()
+        val req = Request.Builder()
+            .url(fileUrl(dir, remoteName))
+            .put(file.asRequestBody("application/zip".toMediaType()))
+            .header("Authorization", authHeader)
+            .header("User-Agent", "FilterMaster/1.7 (Android)")
+            .build()
+        client.newCall(req).execute().use { resp ->
+            if (resp.code !in 200..299) throw DavException(failMessage(resp.code))
         }
     }
 
     fun download(dir: String, name: String, dest: File) {
-        val conn = open(fileUrl(dir, name), "GET")
-        try {
-            val code = conn.responseCode
-            if (code !in 200..299) throw DavException(failMessage(code))
-            FileOutputStream(dest).use { out -> conn.inputStream.use { it.copyTo(out) } }
-        } finally {
-            conn.disconnect()
+        val req = Request.Builder()
+            .url(fileUrl(dir, name))
+            .get()
+            .header("Authorization", authHeader)
+            .header("User-Agent", "FilterMaster/1.7 (Android)")
+            .build()
+        client.newCall(req).execute().use { resp ->
+            if (resp.code !in 200..299) throw DavException(failMessage(resp.code))
+            val body = resp.body ?: throw DavException("服务器未返回内容")
+            dest.parentFile?.mkdirs()
+            dest.outputStream().use { out -> body.byteStream().copyTo(out) }
         }
     }
 
-    /** 解析 multistatus，取每个 response 的 href 文件名 + 属性 */
+    /** 删除远端文件（用于清理旧备份） */
+    fun delete(dir: String, name: String) {
+        val req = Request.Builder()
+            .url(fileUrl(dir, name))
+            .delete()
+            .header("Authorization", authHeader)
+            .header("User-Agent", "FilterMaster/1.7 (Android)")
+            .build()
+        client.newCall(req).execute().use { resp ->
+            if (resp.code !in 200..299 && resp.code != 404) throw DavException(failMessage(resp.code))
+        }
+    }
+
+    /** 解析 multistatus */
     private fun parseList(xml: String): List<RemoteFile> {
         val out = mutableListOf<RemoteFile>()
-        val parser = XmlPullParserFactory.newInstance().apply { isNamespaceAware = true }
-            .newPullParser()
+        val parser = XmlPullParserFactory.newInstance().apply { isNamespaceAware = true }.newPullParser()
         parser.setInput(ByteArrayInputStream(xml.toByteArray(Charsets.UTF_8)), "UTF-8")
 
         var href = ""
@@ -239,11 +246,10 @@ class WebDavClient(
                     }
                 }
                 XmlPullParser.END_TAG -> {
-                    if (parser.name.equals("response", true) && !isDir && href.isNotBlank()) {
-                        val name = runCatching {
-                            URLDecoder.decode(href.trimEnd('/').substringAfterLast('/'), "UTF-8")
-                        }.getOrDefault(href.substringAfterLast('/'))
-                        if (name.isNotBlank()) out.add(RemoteFile(name, size, modified))
+                    if (parser.name.equals("response", true) && href.isNotBlank()) {
+                        val raw = href.trimEnd('/').substringAfterLast('/')
+                        val name = runCatching { URLDecoder.decode(raw, "UTF-8") }.getOrDefault(raw)
+                        if (name.isNotBlank()) out.add(RemoteFile(name, size, modified, isDir))
                     }
                     tag = ""
                 }

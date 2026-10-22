@@ -51,5 +51,27 @@
             android:hint="FilterMaster"
             android:importantForAutofill="no"
             android:inputType="text" />
+
+        <TextView
+            android:id="@+id/btnBrowseCloud"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:background="@drawable/bg_field"
+            android:gravity="center"
+            android:paddingTop="11dp"
+            android:paddingBottom="11dp"
+            android:text="📂 浏览云端文件夹（点选已有目录）"
+            android:textColor="@color/primary"
+            android:textSize="13sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="提示：留空将使用默认目录 FilterMaster，不存在时会自动创建。"
+            android:textColor="@color/text_sub"
+            android:textSize="11sp" />
     </LinearLayout>
 </ScrollView>

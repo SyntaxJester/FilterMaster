@@ -796,21 +796,42 @@ class MainActivity : AppCompatActivity() {
             if (cfg.isReady) {
                 cloudStatus.text = "已配置 · ${cfg.user}"
                 cloudStatus.setTextColor(ContextCompat.getColor(this, R.color.green))
-                
-                // 显示上次同步时间
+
+                // 上次同步时间
                 val lastUpload = SyncStatus.getLastUploadTime(this)
                 val lastDownload = SyncStatus.getLastDownloadTime(this)
                 val lastSync = maxOf(lastUpload, lastDownload)
-                lastSyncTime.text = "上次同步：${SmartSync.formatTime(lastSync)}"
-                
-                // 智能同步按钮
-                if (checkRemote && lastUpload > 0L) {
-                    btnSmartSync.visibility = View.VISIBLE
+                lastSyncTime.text = if (lastSync > 0L)
+                    "上次同步：${SmartSync.formatTime(lastSync)}"
+                else
+                    "尚未同步，点击下方「智能同步」开始"
+
+                // 配置好就一直显示智能同步入口
+                btnSmartSync.visibility = View.VISIBLE
+
+                // 异步探测云端备份数量，避免阻塞界面
+                if (checkRemote) {
+                    btnSmartSync.isEnabled = false
+                    runAsync(
+                        work = {
+                            val client = CloudPrefs.clientOf(cfg)
+                            client.listBackups(cfg.dir).size
+                        },
+                        done = { n ->
+                            btnSmartSync.isEnabled = true
+                            btnSmartSync.text = if (n > 0) "🔄 智能同步（云端 $n 个备份）" else "🔄 智能同步（云端暂无备份）"
+                        },
+                        fail = { e ->
+                            btnSmartSync.isEnabled = true
+                            btnSmartSync.text = "🔄 智能同步（云端检查失败）"
+                            lastSyncTime.text = "云端检查失败：${e.message}"
+                        }
+                    )
                 }
             } else {
                 cloudStatus.text = "未配置"
                 cloudStatus.setTextColor(ContextCompat.getColor(this, R.color.text_sub))
-                lastSyncTime.text = "尚未同步"
+                lastSyncTime.text = "配置账号后即可云端备份与同步"
                 btnSmartSync.visibility = View.GONE
             }
         }
@@ -939,6 +960,21 @@ class MainActivity : AppCompatActivity() {
         etPass.setText(cfg.pass)
         etDir.setText(cfg.dir)
 
+        // 浏览云端，点选已有文件夹
+        view.findViewById<View>(R.id.btnBrowseCloud).setOnClickListener {
+            val url = etUrl.text.toString().trim().ifBlank { CloudPrefs.DEFAULT_URL }
+            val user = etUser.text.toString().trim()
+            val pass = etPass.text.toString()
+            if (user.isBlank() || pass.isBlank()) {
+                toast("请先填写账户与应用密码")
+                return@setOnClickListener
+            }
+            browseCloudFolders(url, user, pass) { picked ->
+                etDir.setText(picked)
+                toast("已选择：$picked")
+            }
+        }
+
         AlertDialog.Builder(this)
             .setTitle("坚果云 / WebDAV 配置")
             .setView(view)
@@ -961,6 +997,89 @@ class MainActivity : AppCompatActivity() {
             }
             .setNegativeButton("取消", null)
             .show()
+    }
+
+    /**
+     * 浏览云端文件夹：逐级进入、可新建、可选当前目录。
+     * 避免用户手输路径出现大小写/层级不一致导致的 403。
+     */
+    private fun browseCloudFolders(
+        url: String,
+        user: String,
+        pass: String,
+        onPick: (String) -> Unit
+    ) {
+        val client = WebDavClient(url, user, pass)
+        var current = ""   // 当前相对路径，空表示根
+
+        fun open() {
+            val progress = showProgress("正在读取云端目录…")
+            runAsync(
+                work = { client.listDir(current) },
+                done = { all ->
+                    progress.dismiss()
+                    val dirs = all.filter { it.isDir }
+                    val labels = mutableListOf<String>()
+                    if (current.isNotEmpty()) labels.add("⬆️ 返回上一级")
+                    labels.add("✅ 使用当前目录：/" + current)
+                    labels.add("➕ 在此新建文件夹…")
+                    dirs.forEach { labels.add("📁 " + it.name) }
+
+                    AlertDialog.Builder(this)
+                        .setTitle("云端：/" + current.ifBlank { "（根目录）" })
+                        .setItems(labels.toTypedArray()) { _, which ->
+                            val offset = if (current.isNotEmpty()) 1 else 0
+                            when {
+                                which == 0 && current.isNotEmpty() -> {
+                                    current = current.substringBeforeLast('/', "")
+                                    open()
+                                }
+                                which == offset -> onPick(current.ifBlank { CloudPrefs.DEFAULT_DIR })
+                                which == offset + 1 -> {
+                                    val input = EditText(this)
+                                    input.hint = "文件夹名称，如 FilterMaster"
+                                    AlertDialog.Builder(this)
+                                        .setTitle("新建文件夹")
+                                        .setView(input)
+                                        .setPositiveButton("创建") { _, _ ->
+                                            val n = input.text.toString().trim().trim('/')
+                                            if (n.isNotBlank()) {
+                                                val target = if (current.isEmpty()) n else "$current/$n"
+                                                val p2 = showProgress("正在创建 $n …")
+                                                runAsync(
+                                                    work = { client.ensureDir(target) },
+                                                    done = {
+                                                        p2.dismiss()
+                                                        current = target
+                                                        open()
+                                                    },
+                                                    fail = { e -> p2.dismiss(); showError("创建失败", e) }
+                                                )
+                                            }
+                                        }
+                                        .setNegativeButton("取消", null)
+                                        .show()
+                                }
+                                else -> {
+                                    val idx = which - offset - 2
+                                    if (idx in dirs.indices) {
+                                        current = if (current.isEmpty()) dirs[idx].name
+                                        else "$current/${dirs[idx].name}"
+                                        open()
+                                    }
+                                }
+                            }
+                        }
+                        .setNegativeButton("取消", null)
+                        .show()
+                },
+                fail = { e ->
+                    progress.dismiss()
+                    showError("读取云端目录失败", e)
+                }
+            )
+        }
+        open()
     }
 
     private fun testCloud(cfg: CloudPrefs.Config) {
