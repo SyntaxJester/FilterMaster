@@ -786,15 +786,32 @@ class MainActivity : AppCompatActivity() {
         summary.text = "当前共 ${items.size} 条记录" +
                 items.count { !it.imagePath.isNullOrBlank() }.let { if (it > 0) "，其中 $it 条带照片" else "" }
 
+        // 云端状态显示
         val cloudStatus = view.findViewById<TextView>(R.id.tvCloudStatus)
-        fun refreshCloudStatus() {
+        val lastSyncTime = view.findViewById<TextView>(R.id.tvLastSyncTime)
+        val btnSmartSync = view.findViewById<TextView>(R.id.btnSmartSync)
+        
+        fun refreshCloudStatus(checkRemote: Boolean = false) {
             val cfg = CloudPrefs.load(this)
             if (cfg.isReady) {
                 cloudStatus.text = "已配置 · ${cfg.user}"
                 cloudStatus.setTextColor(ContextCompat.getColor(this, R.color.green))
+                
+                // 显示上次同步时间
+                val lastUpload = SyncStatus.getLastUploadTime(this)
+                val lastDownload = SyncStatus.getLastDownloadTime(this)
+                val lastSync = maxOf(lastUpload, lastDownload)
+                lastSyncTime.text = "上次同步：${SmartSync.formatTime(lastSync)}"
+                
+                // 智能同步按钮
+                if (checkRemote && lastUpload > 0L) {
+                    btnSmartSync.visibility = View.VISIBLE
+                }
             } else {
                 cloudStatus.text = "未配置"
                 cloudStatus.setTextColor(ContextCompat.getColor(this, R.color.text_sub))
+                lastSyncTime.text = "尚未同步"
+                btnSmartSync.visibility = View.GONE
             }
         }
         refreshCloudStatus()
@@ -812,9 +829,16 @@ class MainActivity : AppCompatActivity() {
         view.findViewById<View>(R.id.btnCloudRestore).setOnClickListener {
             dialog.dismiss(); startCloudRestore()
         }
-        view.findViewById<View>(R.id.btnCloudSetting).setOnClickListener {
-            showCloudConfig { refreshCloudStatus() }
+        view.findViewById<View>(R.id.btnSmartSync).setOnClickListener {
+            dialog.dismiss(); startSmartSync()
         }
+        view.findViewById<View>(R.id.btnCloudSetting).setOnClickListener {
+            showCloudConfig { refreshCloudStatus(true) }
+        }
+        
+        // 打开时自动检查云端状态
+        refreshCloudStatus(true)
+        
         view.findViewById<View>(R.id.btnImportSheet).setOnClickListener {
             dialog.dismiss(); pickSheetFile()
         }
@@ -976,6 +1000,8 @@ class MainActivity : AppCompatActivity() {
             },
             done = { name ->
                 progress.dismiss()
+                SyncStatus.setLastUploadTime(this, System.currentTimeMillis())
+                SyncStatus.appendLog(this, "upload", "$name（${snapshot.size}条）")
                 AlertDialog.Builder(this)
                     .setTitle("云备份完成")
                     .setMessage("已上传 ${snapshot.size} 条记录\n\n文件名：$name\n位置：${cfg.dir}/")
@@ -984,10 +1010,77 @@ class MainActivity : AppCompatActivity() {
             },
             fail = { e ->
                 progress.dismiss()
+                SyncStatus.appendLog(this, "upload_fail", e.message ?: "未知")
                 showError("上传失败", e)
             }
         )
     }
+
+    /** 智能同步：比较本地与云端，自动选择上传或下载 */
+    private fun startSmartSync() {
+        val cfg = CloudPrefs.load(this)
+        if (!cfg.isReady) { toast("请先配置坚果云账号"); showCloudConfig { }; return }
+
+        val progress = showProgress("正在智能同步…")
+        val snapshot = items.toList()
+        runAsync(
+            work = {
+                val client = CloudPrefs.clientOf(cfg)
+                client.ensureDir(cfg.dir)
+                val backups = client.listBackups(cfg.dir)
+                val latest = backups.firstOrNull() ?: return@runAsync null
+                // 云端最新备份的修改时间
+                val remoteTime = SmartSync.parseRemoteTime(latest.lastModified)
+                // 本地数据最近修改时间（取最新一条记录的 createdAt）
+                val localTime = snapshot.maxOfOrNull { parseCreatedTime(it.createdAt) } ?: 0L
+                SmartSync.compare(localTime, remoteTime) to latest
+            },
+            done = { result ->
+                progress.dismiss()
+                if (result == null) {
+                    AlertDialog.Builder(this)
+                        .setTitle("云端为空")
+                        .setMessage("云端还没有任何备份。\n\n是否立即上传当前数据？")
+                        .setPositiveButton("上传", null)
+                        .setNeutralButton("上传", { startCloudBackup() })
+                        .setNegativeButton("取消", null)
+                        .show()
+                    return@runAsync
+                }
+                val (decision, file) = result
+                when (decision) {
+                    1 -> { // 本地更新 → 上传
+                        AlertDialog.Builder(this)
+                            .setTitle("检测到本地更新")
+                            .setMessage("本地数据比云端最新备份（${file.name}）更新。\n\n点击「同步」将上传本地数据到云端。")
+                            .setPositiveButton("同步上传", { startCloudBackup() })
+                            .setNegativeButton("取消", null)
+                            .show()
+                    }
+                    -1 -> { // 云端更新 → 下载
+                        AlertDialog.Builder(this)
+                            .setTitle("检测到云端更新")
+                            .setMessage("云端备份「${file.name}」比本地数据更新。\n\n点击「同步」将下载并合并到本地。")
+                            .setPositiveButton("同步下载", { downloadAndRestore(cfg, file.name) })
+                            .setNegativeButton("取消", null)
+                            .show()
+                    }
+                    else -> {
+                        toast("数据已是最新，无需同步 ✓")
+                    }
+                }
+            },
+            fail = { e ->
+                progress.dismiss()
+                showError("同步检查失败", e)
+            }
+        )
+    }
+
+    private fun parseCreatedTime(iso: String): Long =
+        try {
+            java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US).parse(iso)?.time ?: 0L
+        } catch (e: Exception) { 0L }
 
     private fun startCloudRestore() {
         val cfg = CloudPrefs.load(this)
@@ -1033,9 +1126,12 @@ class MainActivity : AppCompatActivity() {
             done = { file ->
                 progress.dismiss()
                 applyRestore(file, "坚果云 · $name")
+                SyncStatus.setLastDownloadTime(this, System.currentTimeMillis())
+                SyncStatus.appendLog(this, "download", "$name")
             },
             fail = { e ->
                 progress.dismiss()
+                SyncStatus.appendLog(this, "download_fail", e.message ?: "未知")
                 showError("下载失败", e)
             }
         )
