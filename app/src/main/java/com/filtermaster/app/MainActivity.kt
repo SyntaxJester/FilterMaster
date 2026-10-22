@@ -1041,8 +1041,7 @@ class MainActivity : AppCompatActivity() {
                     AlertDialog.Builder(this)
                         .setTitle("云端为空")
                         .setMessage("云端还没有任何备份。\n\n是否立即上传当前数据？")
-                        .setPositiveButton("上传", null)
-                        .setNeutralButton("上传", { startCloudBackup() })
+                        .setPositiveButton("上传", { _, _ -> startCloudBackup() })
                         .setNegativeButton("取消", null)
                         .show()
                     return@runAsync
@@ -1053,7 +1052,7 @@ class MainActivity : AppCompatActivity() {
                         AlertDialog.Builder(this)
                             .setTitle("检测到本地更新")
                             .setMessage("本地数据比云端最新备份（${file.name}）更新。\n\n点击「同步」将上传本地数据到云端。")
-                            .setPositiveButton("同步上传", { startCloudBackup() })
+                            .setPositiveButton("同步上传", { _, _ -> startCloudBackup() })
                             .setNegativeButton("取消", null)
                             .show()
                     }
@@ -1061,7 +1060,7 @@ class MainActivity : AppCompatActivity() {
                         AlertDialog.Builder(this)
                             .setTitle("检测到云端更新")
                             .setMessage("云端备份「${file.name}」比本地数据更新。\n\n点击「同步」将下载并合并到本地。")
-                            .setPositiveButton("同步下载", { downloadAndRestore(cfg, file.name) })
+                            .setPositiveButton("同步下载", { _, _ -> downloadAndRestore(cfg, file.name) })
                             .setNegativeButton("取消", null)
                             .show()
                     }

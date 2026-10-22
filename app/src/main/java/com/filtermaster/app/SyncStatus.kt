@@ -1,7 +1,6 @@
 package com.filtermaster.app
 
 import android.content.Context
-import org.json.JSONObject
 
 /**
  * 云端同步状态存储。
@@ -32,7 +31,7 @@ object SyncStatus {
     }
 
     fun setLastDownloadTime(context: Context, time: Long) {
-        context.getSharedPreferences(PREF, Context.MODE_PRIVATE)
+        context.getSharedPreferences(PREF, Context.MODE_PRIVATE).edit()
             .putLong(K_LAST_DOWNLOAD, time)
             .apply()
     }
@@ -47,13 +46,13 @@ object SyncStatus {
         sp.edit().putStringSet(K_LOG, updated).apply()
     }
 
-    fun getLog(context: Context): List<Pair<Long, String, String>> {
+    fun getLog(context: Context): List<Triple<Long, String, String>> {
         return context.getSharedPreferences(PREF, Context.MODE_PRIVATE)
             .getStringSet(K_LOG, emptySet())
             ?.map { entry ->
                 val parts = entry.split("|", limit = 3)
                 if (parts.size == 3) {
-                    Pair(parts[0].toLongOrNull() ?: 0L, parts[1], parts[2])
+                    Triple(parts[0].toLongOrNull() ?: 0L, parts[1], parts[2])
                 } else null
             }
             ?.filterNotNull()
